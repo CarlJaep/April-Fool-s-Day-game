@@ -3,39 +3,224 @@
 <head>
 <meta charset="UTF-8">
 <title>Hex Dominion</title>
+
 <style>
-body { margin:0; background:#0f172a; color:white; text-align:center; }
-#board { position:relative; width:1000px; height:800px; margin:auto; transform:scale(0.5); }
-.hex {
-  position:absolute;
-  width:40px; height:34px;
-  background:#6b7280;
-  clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
-  border:1px solid rgba(255,255,255,0.2);
+body {
+  margin: 0;
+  background: #0f172a;
+  color: white;
+  text-align: center;
+  font-family: Arial;
 }
-.dead { background:#111827 !important; }
+
+#board {
+  position: relative;
+  width: 100%;
+  height: 600px;
+}
+
+.hex {
+  position: absolute;
+  width: 40px;
+  height: 34px;
+  background: #6b7280;
+  clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+}
+
+.dead {
+  background: #111827 !important;
+  cursor: not-allowed;
+}
+
+.player {
+  box-shadow: inset 0 0 0 2px white;
+}
 </style>
+
 </head>
 <body>
 
 <h2>Hex Dominion</h2>
+
 <input id="id" placeholder="학번">
 <button onclick="start()">시작</button>
+
 <div>돈: <span id="money">0</span></div>
 
 <select id="action">
-<option value="claim">점령</option>
-<option value="capture">탈취</option>
-<option value="remote">원거리</option>
-<option value="destroy">파괴</option>
+<option value="claim">점령 - 인접 (50)</option>
+<option value="capture">탈취 - 인접 (200)</option>
+<option value="remote">원거리 (500)</option>
+<option value="destroy">파괴 (250)</option>
 </select>
 
 <button onclick="clickMoney()">+1</button>
 
+<div id="ranking"></div>
+
 <div id="board"></div>
 
-<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-<script src="main.js"></script>
+<script>
+const HEX_W = 40;
+const HEX_H = 34;
+const H_STEP = HEX_W * 0.75;
+const V_STEP = HEX_H;
+const R = 10;
+
+const CLAIM_COST = 50;
+const CAPTURE_COST = 200;
+const REMOTE_COST = 500;
+const DESTROY_COST = 250;
+
+const colors = {
+  blue: "#3b82f6",
+  red: "#ef4444",
+  green: "#22c55e",
+  yellow: "#f59e0b"
+};
+
+const teamNames = {
+  blue: "1반",
+  red: "2반",
+  green: "3반",
+  yellow: "4반"
+};
+
+let tiles = {};
+let money = 0;
+let team = null;
+
+function key(q,r){ return q+","+r; }
+
+function buildMap(){
+  for(let q=-R;q<=R;q++){
+    let r1=Math.max(-R,-q-R);
+    let r2=Math.min(R,-q+R);
+    for(let r=r1;r<=r2;r++){
+      tiles[key(q,r)] = {
+        q,r,
+        owner:null,
+        active:true
+      };
+    }
+  }
+}
+
+function draw(){
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+
+  Object.values(tiles).forEach(t => {
+    const div = document.createElement("div");
+    div.className = "hex";
+
+    let x = t.q * H_STEP + 300;
+    let y = t.r * V_STEP + t.q*(HEX_H/2) + 200;
+
+    div.style.left = x + "px";
+    div.style.top = y + "px";
+
+    if(!t.active) div.classList.add("dead");
+    else if(t.owner) div.style.background = colors[t.owner];
+
+    if(t.owner === team && t.active) div.classList.add("player");
+
+    div.onclick = () => clickTile(t);
+
+    board.appendChild(div);
+  });
+
+  document.getElementById("money").innerText = money;
+  updateRanking();
+}
+
+function start(){
+  const id = document.getElementById("id").value;
+
+  if(id.length < 2) return;
+
+  const map = {"1":"blue","2":"red","3":"green","4":"yellow"};
+  team = map[id[1]];
+
+  if(!team) return;
+
+  money = 0;
+  buildMap();
+  draw();
+}
+
+function clickMoney(){
+  money++;
+  draw();
+}
+
+function neighbors(t){
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+  return dirs.map(([dq,dr]) => tiles[key(t.q+dq,t.r+dr)]).filter(Boolean);
+}
+
+function hasAdj(t){
+  return neighbors(t).some(n => n.active && n.owner === team);
+}
+
+function clickTile(t){
+  if(!t.active) return;
+
+  const action = document.getElementById("action").value;
+
+  if(action==="claim" && !t.owner && hasAdj(t) && money>=CLAIM_COST){
+    money-=CLAIM_COST;
+    t.owner=team;
+  }
+
+  if(action==="capture" && t.owner && t.owner!==team && hasAdj(t) && money>=CAPTURE_COST){
+    money-=CAPTURE_COST;
+    t.owner=team;
+  }
+
+  if(action==="remote" && t.owner!==team && money>=REMOTE_COST){
+    money-=REMOTE_COST;
+    t.owner=team;
+  }
+
+  if(action==="destroy" && t.owner && t.owner!==team && money>=DESTROY_COST){
+    money-=DESTROY_COST;
+    t.owner=null;
+    t.active=false;
+  }
+
+  draw();
+  checkEnd();
+}
+
+function updateRanking(){
+  const count = {blue:0,red:0,green:0,yellow:0};
+
+  Object.values(tiles).forEach(t=>{
+    if(t.active && t.owner) count[t.owner]++;
+  });
+
+  const sorted = Object.entries(count).sort((a,b)=>b[1]-a[1]);
+
+  document.getElementById("ranking").innerHTML =
+    sorted.map(([t,c],i)=>`${i+1}. ${teamNames[t]}${t===team?" (나)":""}: ${c}`)
+    .join("<br>");
+}
+
+function checkEnd(){
+  const alive = Object.values(tiles).filter(t=>t.active);
+
+  if(!alive.every(t=>t.owner)) return;
+
+  const count = {blue:0,red:0,green:0,yellow:0};
+  alive.forEach(t=>count[t.owner]++);
+
+  const win = Object.entries(count).sort((a,b)=>b[1]-a[1])[0][0];
+  alert("승리: "+teamNames[win]);
+}
+</script>
 
 </body>
 </html>
