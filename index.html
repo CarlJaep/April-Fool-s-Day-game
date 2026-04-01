@@ -320,6 +320,12 @@
     border-color: rgba(255, 255, 255, 0.2);
   }
 
+  .hex.ghost {
+    background: rgba(88, 169, 255, 0.12) !important;
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
   .board-card {
     position: relative;
     padding: 20px;
@@ -572,9 +578,11 @@
         <div class="mode-switch">
           <button id="battleModeBtn" class="mode-btn" type="button">전투 모드</button>
           <button id="bombModeBtn" class="mode-btn" type="button">폭탄 모드</button>
+          <button id="rebuildModeBtn" class="mode-btn" type="button">폐허 재건</button>
+          <button id="expandModeBtn" class="mode-btn" type="button">미개척 개척</button>
           <button id="buyBombBtn" class="mode-btn" type="button">폭탄 구매</button>
         </div>
-        <div id="modeHelp" class="helper">전투 모드에서는 공격/강화, 폭탄 모드에서는 타일 비활성화를 시도합니다.</div>
+        <div id="modeHelp" class="helper">전투, 폭탄, 재건, 개척 중 하나를 골라 타일을 클릭합니다.</div>
       </section>
 
       <section class="card section">
@@ -642,6 +650,8 @@
     passiveTickMs: 1000,
     mapRadius: 7,
     bombCost: 55,
+    rebuildCost: 28,
+    expandCost: 34,
     teamTileCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamStrengthTotals: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
@@ -675,6 +685,42 @@
     }
 
     return neighbors(tile).some((neighbor) => neighbor.owner === player.team);
+  }
+
+  function neighborCoords(q, r) {
+    return [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]]
+      .map(([dq, dr]) => ({ q: q + dq, r: r + dr }));
+  }
+
+  function getExpansionCandidates() {
+    if (!player) {
+      return [];
+    }
+
+    const seen = new Set();
+    const candidates = [];
+
+    Object.values(tiles).forEach((tile) => {
+      if (!tile.active || tile.owner !== player.team) {
+        return;
+      }
+
+      neighborCoords(tile.q, tile.r).forEach((candidate) => {
+        const candidateKey = key(candidate.q, candidate.r);
+
+        if (tiles[candidateKey] || seen.has(candidateKey)) {
+          return;
+        }
+
+        seen.add(candidateKey);
+        candidates.push({
+          ...candidate,
+          ghost: true
+        });
+      });
+    });
+
+    return candidates;
   }
 
   function pushFeed(message) {
@@ -734,12 +780,25 @@
         `${meta.passiveTickMs / 1000}초마다 보급 드론 수치만큼 골드가 들어옵니다. 현재 접속 ${meta.onlinePlayers}명`;
     }
 
-    document.getElementById("modeHelp").textContent = selectedMode === "bomb"
-      ? `폭탄 모드: 비본진 타일을 아예 비활성화합니다. 현재 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`
-      : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`;
+    document.getElementById("modeHelp").textContent =
+      selectedMode === "bomb"
+        ? `폭탄 모드: 아무 비본진 타일이든 폐허로 만들 수 있습니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`
+        : selectedMode === "rebuild"
+          ? `폐허 재건: 우리 영토와 맞닿은 폐허를 ${formatNumber(meta.rebuildCost)} 골드로 되살립니다.`
+          : selectedMode === "expand"
+            ? `미개척 개척: 바깥 유령 칸을 ${formatNumber(meta.expandCost)} 골드로 새 영토로 만듭니다.`
+            : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`;
 
     document.getElementById("boardHint").textContent = player
-      ? `${player.teamLabel} ${player.maskedStudentId}. ${selectedMode === "bomb" ? "폭탄 모드에서 클릭하면 타일을 비활성화합니다." : "아군 타일 클릭은 방어력 강화, 인접 적/중립 타일 클릭은 공격입니다."}`
+      ? `${player.teamLabel} ${player.maskedStudentId}. ${
+          selectedMode === "bomb"
+            ? "폭탄 모드에서는 원거리 타일도 바로 비활성화할 수 있습니다."
+            : selectedMode === "rebuild"
+              ? "폐허를 클릭해 전초기지로 복구할 수 있습니다."
+              : selectedMode === "expand"
+                ? "유령 칸을 클릭해 맵 바깥으로 새 땅을 개척할 수 있습니다."
+                : "아군 타일 클릭은 방어력 강화, 인접 적/중립 타일 클릭은 공격입니다."
+        }`
       : "입장 후 우리 영토에 붙은 타일을 클릭하면 공격, 우리 타일을 누르면 방어력 강화입니다.";
   }
 
@@ -842,11 +901,15 @@
   function renderModes() {
     document.getElementById("battleModeBtn").classList.toggle("active", selectedMode === "battle");
     document.getElementById("bombModeBtn").classList.toggle("active", selectedMode === "bomb");
+    document.getElementById("rebuildModeBtn").classList.toggle("active", selectedMode === "rebuild");
+    document.getElementById("expandModeBtn").classList.toggle("active", selectedMode === "expand");
     document.getElementById("buyBombBtn").textContent = player
       ? `${formatNumber(meta.bombCost)} 골드로 폭탄 구매`
       : "입장 후 폭탄 구매";
     document.getElementById("buyBombBtn").disabled = !player || player.gold < meta.bombCost;
     document.getElementById("bombModeBtn").disabled = !player || player.bombCount <= 0;
+    document.getElementById("rebuildModeBtn").disabled = !player;
+    document.getElementById("expandModeBtn").disabled = !player;
   }
 
   function isCandidate(tile) {
@@ -855,7 +918,7 @@
     }
 
     if (!tile.active) {
-      return false;
+      return selectedMode === "rebuild" && hasAdjacentMine(tile);
     }
 
     if (selectedMode === "bomb") {
@@ -874,6 +937,14 @@
       return true;
     }
 
+    if (selectedMode === "rebuild") {
+      return false;
+    }
+
+    if (selectedMode === "expand") {
+      return false;
+    }
+
     if (tile.owner === player.team) {
       return tile.strength < MAX_TILE_STRENGTH;
     }
@@ -888,16 +959,34 @@
   function renderBoard() {
     const board = document.getElementById("board");
     board.innerHTML = "";
+    const expansionCandidates = selectedMode === "expand" ? getExpansionCandidates() : [];
+    const renderTiles = [...Object.values(tiles), ...expansionCandidates];
 
-    const centerX = board.clientWidth / 2 - HEX_W / 2;
-    const centerY = board.clientHeight / 2 - HEX_H / 2;
+    const points = renderTiles.map((tile) => ({
+      tile,
+      x: tile.q * H_STEP,
+      y: tile.r * V_STEP + tile.q * (HEX_H / 2)
+    }));
 
-    Object.values(tiles).forEach((tile) => {
+    const minX = Math.min(...points.map((point) => point.x), 0);
+    const maxX = Math.max(...points.map((point) => point.x), 0);
+    const minY = Math.min(...points.map((point) => point.y), 0);
+    const maxY = Math.max(...points.map((point) => point.y), 0);
+    const padding = 120;
+    const boardWidth = Math.max(maxX - minX + HEX_W + padding * 2, board.parentElement.clientWidth);
+    const boardHeight = Math.max(maxY - minY + HEX_H + padding * 2, board.parentElement.clientHeight);
+
+    board.style.width = `${boardWidth}px`;
+    board.style.height = `${boardHeight}px`;
+
+    points.forEach(({ tile, x, y }) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "hex";
 
-      if (!tile.active) {
+      if (tile.ghost) {
+        button.classList.add("ghost", "candidate");
+      } else if (!tile.active) {
         button.classList.add("dead");
       } else if (tile.owner) {
         button.style.background = colors[tile.owner];
@@ -917,23 +1006,22 @@
         button.classList.add("disabled");
       }
 
-      const x = tile.q * H_STEP + centerX;
-      const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
+      button.style.left = `${x - minX + padding}px`;
+      button.style.top = `${y - minY + padding}px`;
 
-      button.style.left = `${x}px`;
-      button.style.top = `${y}px`;
-
-      const label = !tile.active ? "폐허" : (tile.base ? "BASE" : (tile.owner ? teamNames[tile.owner] : "중립"));
+      const label = tile.ghost ? "개척" : (!tile.active ? "폐허" : (tile.base ? "BASE" : (tile.owner ? teamNames[tile.owner] : "중립")));
       button.innerHTML = `
         <div class="hex-inner">
           <div>
-            <div class="hex-strength">${tile.active ? formatNumber(tile.strength) : "X"}</div>
+            <div class="hex-strength">${tile.ghost ? "+" : (tile.active ? formatNumber(tile.strength) : "X")}</div>
             <div class="hex-badge">${label}</div>
           </div>
         </div>
       `;
 
-      button.title = `(${tile.q}, ${tile.r}) · ${label} · 방어력 ${tile.strength}`;
+      button.title = tile.ghost
+        ? `(${tile.q}, ${tile.r}) · 미개척 지대`
+        : `(${tile.q}, ${tile.r}) · ${label} · 방어력 ${tile.strength}`;
       button.onclick = () => handleTileClick(tile);
       board.appendChild(button);
     });
@@ -993,6 +1081,26 @@
     }
 
     selectedMode = "bomb";
+    renderAll();
+  };
+
+  document.getElementById("rebuildModeBtn").onclick = () => {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    selectedMode = "rebuild";
+    renderAll();
+  };
+
+  document.getElementById("expandModeBtn").onclick = () => {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    selectedMode = "expand";
     renderAll();
   };
 

@@ -31,6 +31,9 @@ const FORTIFY_RATIO = Number(process.env.FORTIFY_RATIO || 0.6);
 const ACTION_GOLD_REWARD = Number(process.env.ACTION_GOLD_REWARD || 1);
 const CAPTURE_BONUS_GOLD = Number(process.env.CAPTURE_BONUS_GOLD || 8);
 const BOMB_COST = Number(process.env.BOMB_COST || 55);
+const REBUILD_COST = Number(process.env.REBUILD_COST || 28);
+const EXPAND_COST = Number(process.env.EXPAND_COST || 34);
+const EXPANDED_TILE_STRENGTH = Number(process.env.EXPANDED_TILE_STRENGTH || 18);
 
 const UPGRADE_CONFIG = {
   click: {
@@ -114,6 +117,22 @@ function key(q, r) {
   return `${q},${r}`;
 }
 
+function parseTileKey(tileKey) {
+  const [qRaw, rRaw] = String(tileKey).split(",");
+  const q = Number(qRaw);
+  const r = Number(rRaw);
+
+  if (!Number.isFinite(q) || !Number.isFinite(r)) {
+    return null;
+  }
+
+  return { q, r };
+}
+
+function isBasePosition(q, r) {
+  return Object.values(BASE_POSITIONS).some((position) => position.q === q && position.r === r);
+}
+
 function buildFreshTiles() {
   const nextTiles = {};
 
@@ -153,12 +172,23 @@ function sanitizeTiles(rawTiles) {
     return freshTiles;
   }
 
-  Object.entries(freshTiles).forEach(([tileKey, freshTile]) => {
-    const rawTile = rawTiles[tileKey];
+  Object.entries(rawTiles).forEach(([tileKey, rawTile]) => {
+    const parsed = parseTileKey(tileKey);
 
-    if (!rawTile || typeof rawTile !== "object") {
+    if (!parsed || !rawTile || typeof rawTile !== "object") {
       return;
     }
+
+    const freshTile = freshTiles[tileKey] || {
+      q: parsed.q,
+      r: parsed.r,
+      owner: null,
+      active: true,
+      strength: NEUTRAL_TILE_STRENGTH,
+      base: isBasePosition(parsed.q, parsed.r)
+    };
+
+    freshTiles[tileKey] = freshTile;
 
     const isBase = freshTile.base;
     const owner = typeof rawTile.owner === "string" && TEAM_LABELS[rawTile.owner] ? rawTile.owner : null;
@@ -420,6 +450,8 @@ function getPublicMeta() {
     passiveTickMs: PASSIVE_TICK_MS,
     mapRadius: MAP_RADIUS,
     bombCost: BOMB_COST,
+    rebuildCost: REBUILD_COST,
+    expandCost: EXPAND_COST,
     teamTileCounts,
     teamStrengthTotals,
     teamPlayerCounts: getOnlineCounts(),
@@ -688,10 +720,6 @@ function bombTile(profile, tile) {
     return { ok: false, reason: "보유한 폭탄이 없습니다." };
   }
 
-  if (!tile.owner && !hasAdjacentTeam(tile, profile.team)) {
-    return { ok: false, reason: "중립 칸은 우리 땅과 맞닿아 있을 때만 폭탄을 사용할 수 있습니다." };
-  }
-
   profile.bombCount -= 1;
   profile.totalActions += 1;
   profile.warPoints += Math.max(8, tile.strength);
@@ -704,6 +732,71 @@ function bombTile(profile, tile) {
   return {
     ok: true,
     notice: "폭탄 투하 성공, 타일이 비활성화되었습니다."
+  };
+}
+
+function rebuildTile(profile, tile) {
+  if (tile.active) {
+    return { ok: false, reason: "활성 칸은 재건 대상이 아닙니다." };
+  }
+
+  if (!hasAdjacentTeam(tile, profile.team)) {
+    return { ok: false, reason: "우리 영토와 맞닿은 폐허만 재건할 수 있습니다." };
+  }
+
+  if (profile.gold < REBUILD_COST) {
+    return { ok: false, reason: "폐허를 재건할 골드가 부족합니다." };
+  }
+
+  profile.gold -= REBUILD_COST;
+  profile.totalActions += 1;
+  profile.totalCaptures += 1;
+  profile.warPoints += EXPANDED_TILE_STRENGTH;
+  touchProfile(profile);
+
+  tile.active = true;
+  tile.owner = profile.team;
+  tile.strength = EXPANDED_TILE_STRENGTH;
+
+  return {
+    ok: true,
+    notice: "폐허를 재건해 새로운 전초기지로 만들었습니다."
+  };
+}
+
+function expandTerritory(profile, q, r) {
+  const nextKey = key(q, r);
+
+  if (tiles[nextKey]) {
+    return { ok: false, reason: "이미 존재하는 칸입니다." };
+  }
+
+  if (!hasAdjacentTeam({ q, r }, profile.team)) {
+    return { ok: false, reason: "우리 영토와 맞닿은 바깥 칸만 개척할 수 있습니다." };
+  }
+
+  if (profile.gold < EXPAND_COST) {
+    return { ok: false, reason: "개척에 필요한 골드가 부족합니다." };
+  }
+
+  profile.gold -= EXPAND_COST;
+  profile.totalActions += 1;
+  profile.totalCaptures += 1;
+  profile.warPoints += EXPANDED_TILE_STRENGTH;
+  touchProfile(profile);
+
+  tiles[nextKey] = {
+    q,
+    r,
+    owner: profile.team,
+    active: true,
+    strength: EXPANDED_TILE_STRENGTH,
+    base: false
+  };
+
+  return {
+    ok: true,
+    notice: "미개척 지대를 열어 새 영토를 만들었습니다."
   };
 }
 
@@ -720,17 +813,37 @@ function handleTileClick(socket, { q, r, mode }) {
     return;
   }
 
-  const tile = tiles[key(Number(q), Number(r))];
+  const targetQ = Number(q);
+  const targetR = Number(r);
+  const tile = tiles[key(targetQ, targetR)];
+  const actionMode = mode === "bomb" || mode === "rebuild" || mode === "expand" ? mode : "battle";
+
+  if (actionMode === "expand") {
+    const result = expandTerritory(profile, targetQ, targetR);
+
+    if (!result.ok) {
+      reject(socket, result.reason);
+      return;
+    }
+
+    recomputeBoardStats();
+    socket.emit("notice", result.notice);
+    emitPlayerState(socket);
+    queueBroadcast();
+    queueSave();
+    return;
+  }
 
   if (!tile) {
     reject(socket, "존재하지 않는 타일입니다.");
     return;
   }
 
-  const actionMode = mode === "bomb" ? "bomb" : "battle";
   const result = actionMode === "bomb"
     ? bombTile(profile, tile)
-    : (tile.owner === profile.team ? fortifyTile(profile, tile) : attackTile(profile, tile));
+    : (actionMode === "rebuild"
+      ? rebuildTile(profile, tile)
+      : (tile.owner === profile.team ? fortifyTile(profile, tile) : attackTile(profile, tile)));
 
   if (!result.ok) {
     reject(socket, result.reason);
