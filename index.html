@@ -765,6 +765,37 @@
         </div>
         <div id="adminActions" class="admin-actions">
           <input id="banReason" maxlength="80" placeholder="밴 사유 입력">
+          <div class="admin-toolbar">
+            <input id="adminGoldAmount" inputmode="numeric" placeholder="골드 지급량 예: 500">
+            <button id="adminResetBtn" class="danger-btn" type="button">게임 초기화</button>
+          </div>
+          <div class="admin-toolbar">
+            <button id="adminGrantTeamBtn" type="button">선택 팀 지급</button>
+            <button id="adminGrantAllBtn" type="button">전체 지급</button>
+            <button id="adminClearRuinsBtn" type="button">폐허 일괄 정리</button>
+          </div>
+          <div class="admin-toolbar">
+            <input id="adminBroadcastText" maxlength="160" placeholder="전체 공지 입력">
+            <button id="adminBroadcastBtn" type="button">공지 발송</button>
+          </div>
+          <div id="adminTileHelp" class="helper">타일 편집 모드를 켜면 보드를 클릭해 즉시 강제 변경합니다.</div>
+          <div class="mode-switch">
+            <button id="adminTileOffBtn" class="mode-btn" type="button">편집 끔</button>
+            <button id="adminTileClaimBtn" class="mode-btn" type="button">강제 점령</button>
+            <button id="adminTileNeutralBtn" class="mode-btn" type="button">중립화</button>
+            <button id="adminTileRuinBtn" class="mode-btn" type="button">폐허화</button>
+            <button id="adminTileFortifyBtn" class="mode-btn" type="button">최대 강화</button>
+          </div>
+          <div class="mode-switch">
+            <button id="adminTeamBlueBtn" class="mode-btn" type="button">1반</button>
+            <button id="adminTeamRedBtn" class="mode-btn" type="button">2반</button>
+            <button id="adminTeamGreenBtn" class="mode-btn" type="button">3반</button>
+            <button id="adminTeamYellowBtn" class="mode-btn" type="button">4반</button>
+          </div>
+          <div>
+            <h2 style="margin:0 0 10px;">의심 플레이어</h2>
+            <div id="adminSuspicious" class="list"></div>
+          </div>
           <div>
             <h2 style="margin:0 0 10px;">접속 중 플레이어</h2>
             <div id="adminPlayers" class="list"></div>
@@ -837,6 +868,8 @@
     passiveTickMs: 1000,
     mapRadius: 7,
     bombCost: 55,
+    bombUsePenaltyGold: 18,
+    bombBacklashDamage: 8,
     rebuildCost: 28,
     expandCost: 34,
     teamSupplyCost: 48,
@@ -852,9 +885,13 @@
   let adminState = {
     enabled: true,
     authenticated: false,
+    teams: [],
     onlinePlayers: [],
+    suspiciousPlayers: [],
     bans: []
   };
+  let selectedAdminTileMode = "off";
+  let selectedAdminTeam = "blue";
   let selectedMode = "battle";
   let lastStudentId = "";
   let hasJoinedOnce = false;
@@ -1134,17 +1171,17 @@
 
     document.getElementById("modeHelp").textContent =
       selectedMode === "bomb"
-        ? `폭탄 모드: 아무 비본진 타일이든 폐허로 만들 수 있습니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`
+        ? `폭탄 모드: 아무 비본진 타일이든 폐허로 만들 수 있습니다. 구매 ${formatNumber(meta.bombCost)} 골드, 사용 시 ${formatNumber(meta.bombUsePenaltyGold)} 골드와 아군 타일 약화`
         : selectedMode === "rebuild"
           ? `폐허 재건: 우리 영토와 맞닿은 폐허를 ${formatNumber(meta.rebuildCost)} 골드로 되살립니다.`
           : selectedMode === "expand"
             ? `미개척 개척: 바깥 유령 칸을 ${formatNumber(meta.expandCost)} 골드로 새 영토로 만듭니다.`
-            : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`;
+            : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄은 구매 ${formatNumber(meta.bombCost)} 골드, 사용 페널티 ${formatNumber(meta.bombUsePenaltyGold)} 골드입니다.`;
 
     document.getElementById("boardHint").textContent = player
       ? `${player.teamLabel} ${player.studentId}. ${
           selectedMode === "bomb"
-            ? "폭탄 모드에서는 원거리 타일도 바로 비활성화할 수 있습니다."
+            ? `폭탄 모드에서는 원거리 타일도 바로 비활성화할 수 있지만, 사용 시 ${meta.bombUsePenaltyGold} 골드와 아군 타일 ${meta.bombBacklashDamage} 약화 페널티가 있습니다.`
             : selectedMode === "rebuild"
               ? "폐허를 클릭해 전초기지로 복구할 수 있습니다."
               : selectedMode === "expand"
@@ -1311,9 +1348,13 @@
     const loginButton = document.getElementById("adminLoginBtn");
     const logoutButton = document.getElementById("adminLogoutBtn");
     const passwordInput = document.getElementById("adminPassword");
+    const goldAmountInput = document.getElementById("adminGoldAmount");
+    const broadcastInput = document.getElementById("adminBroadcastText");
+    const suspicious = document.getElementById("adminSuspicious");
     const players = document.getElementById("adminPlayers");
     const bans = document.getElementById("adminBans");
 
+    suspicious.innerHTML = "";
     players.innerHTML = "";
     bans.innerHTML = "";
 
@@ -1329,13 +1370,67 @@
     loginButton.disabled = adminState.authenticated;
     logoutButton.disabled = !adminState.authenticated;
     passwordInput.disabled = adminState.authenticated;
+    goldAmountInput.disabled = !adminState.authenticated;
+    broadcastInput.disabled = !adminState.authenticated;
+    document.getElementById("adminResetBtn").disabled = !adminState.authenticated;
+    document.getElementById("adminGrantTeamBtn").disabled = !adminState.authenticated;
+    document.getElementById("adminGrantAllBtn").disabled = !adminState.authenticated;
+    document.getElementById("adminClearRuinsBtn").disabled = !adminState.authenticated;
+    document.getElementById("adminBroadcastBtn").disabled = !adminState.authenticated;
 
     if (!adminState.authenticated) {
       summary.textContent = "로그인 후 접속 중 플레이어를 즉시 밴하거나 해제할 수 있습니다.";
+      selectedAdminTileMode = "off";
       return;
     }
 
     summary.textContent = `관리자 연결됨 · 접속 ${adminState.onlinePlayers.length}명 · 차단 ${adminState.bans.length}건`;
+    document.getElementById("adminTileHelp").textContent =
+      selectedAdminTileMode === "off"
+        ? "타일 편집 모드를 켜면 보드를 클릭해 즉시 강제 변경합니다."
+        : `현재 관리자 타일 모드: ${selectedAdminTileMode} · 대상 팀 ${teamNames[selectedAdminTeam]}`;
+    document.getElementById("adminTileOffBtn").classList.toggle("active", selectedAdminTileMode === "off");
+    document.getElementById("adminTileClaimBtn").classList.toggle("active", selectedAdminTileMode === "claim");
+    document.getElementById("adminTileNeutralBtn").classList.toggle("active", selectedAdminTileMode === "neutral");
+    document.getElementById("adminTileRuinBtn").classList.toggle("active", selectedAdminTileMode === "ruin");
+    document.getElementById("adminTileFortifyBtn").classList.toggle("active", selectedAdminTileMode === "fortify");
+    document.getElementById("adminTeamBlueBtn").classList.toggle("active", selectedAdminTeam === "blue");
+    document.getElementById("adminTeamRedBtn").classList.toggle("active", selectedAdminTeam === "red");
+    document.getElementById("adminTeamGreenBtn").classList.toggle("active", selectedAdminTeam === "green");
+    document.getElementById("adminTeamYellowBtn").classList.toggle("active", selectedAdminTeam === "yellow");
+
+    if (!adminState.suspiciousPlayers.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-item";
+      empty.innerHTML = `<div class="muted">현재 분탕 의심 플레이어가 없습니다.</div>`;
+      suspicious.appendChild(empty);
+    } else {
+      adminState.suspiciousPlayers.forEach((entry) => {
+        const row = document.createElement("div");
+        row.className = "admin-row";
+        row.innerHTML = `
+          <div>
+            <strong>${entry.studentId}</strong>
+            <div class="muted">${entry.teamLabel} · 의심 점수 ${formatNumber(entry.suspicionScore)} · ${entry.lastReason}</div>
+          </div>
+        `;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "danger-btn";
+        button.textContent = "즉시 밴";
+        button.onclick = () => {
+          const reason = document.getElementById("banReason").value.trim() || `분탕 의심: ${entry.lastReason}`;
+          socket.emit("adminBan", {
+            studentId: entry.studentId,
+            reason
+          });
+        };
+
+        row.appendChild(button);
+        suspicious.appendChild(row);
+      });
+    }
 
     if (!adminState.onlinePlayers.length) {
       const empty = document.createElement("div");
@@ -1353,11 +1448,31 @@
           </div>
         `;
 
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "danger-btn";
-        button.textContent = "밴";
-        button.onclick = () => {
+        const controls = document.createElement("div");
+        controls.className = "admin-toolbar";
+
+        const grantButton = document.createElement("button");
+        grantButton.type = "button";
+        grantButton.textContent = "골드 지급";
+        grantButton.onclick = () => {
+          const amount = Math.round(Number(document.getElementById("adminGoldAmount").value || "0"));
+
+          if (!Number.isFinite(amount) || amount === 0) {
+            setBanner("관리자 골드 지급량을 입력하세요.", "error");
+            return;
+          }
+
+          socket.emit("adminGrantGold", {
+            studentId: entry.studentId,
+            amount
+          });
+        };
+
+        const banButton = document.createElement("button");
+        banButton.type = "button";
+        banButton.className = "danger-btn";
+        banButton.textContent = "밴";
+        banButton.onclick = () => {
           const reason = document.getElementById("banReason").value.trim();
           socket.emit("adminBan", {
             studentId: entry.studentId,
@@ -1365,7 +1480,9 @@
           });
         };
 
-        row.appendChild(button);
+        controls.appendChild(grantButton);
+        controls.appendChild(banButton);
+        row.appendChild(controls);
         players.appendChild(row);
       });
     }
@@ -1594,6 +1711,16 @@
       return;
     }
 
+    if (adminState.authenticated && selectedAdminTileMode !== "off") {
+      socket.emit("adminTileAction", {
+        q: tile.q,
+        r: tile.r,
+        mode: selectedAdminTileMode,
+        team: selectedAdminTeam
+      });
+      return;
+    }
+
     if (!player) {
       setBanner("먼저 입장해야 합니다.", "error");
       return;
@@ -1715,6 +1842,117 @@
     }
   });
 
+  document.getElementById("adminResetBtn").onclick = () => {
+    if (!adminState.authenticated) {
+      setBanner("관리자 로그인이 필요합니다.", "error");
+      return;
+    }
+
+    if (!window.confirm("게임 상태를 초기화합니다. 계속하시겠습니까?")) {
+      return;
+    }
+
+    socket.emit("adminResetGame");
+  };
+
+  document.getElementById("adminGrantTeamBtn").onclick = () => {
+    if (!adminState.authenticated) {
+      setBanner("관리자 로그인이 필요합니다.", "error");
+      return;
+    }
+
+    const amount = Math.round(Number(document.getElementById("adminGoldAmount").value || "0"));
+
+    if (!Number.isFinite(amount) || amount === 0) {
+      setBanner("팀 지급 골드량을 입력하세요.", "error");
+      return;
+    }
+
+    socket.emit("adminGrantTeamGold", {
+      team: selectedAdminTeam,
+      amount
+    });
+  };
+
+  document.getElementById("adminGrantAllBtn").onclick = () => {
+    if (!adminState.authenticated) {
+      setBanner("관리자 로그인이 필요합니다.", "error");
+      return;
+    }
+
+    const amount = Math.round(Number(document.getElementById("adminGoldAmount").value || "0"));
+
+    if (!Number.isFinite(amount) || amount === 0) {
+      setBanner("전체 지급 골드량을 입력하세요.", "error");
+      return;
+    }
+
+    socket.emit("adminGrantAllGold", { amount });
+  };
+
+  document.getElementById("adminClearRuinsBtn").onclick = () => {
+    if (!adminState.authenticated) {
+      setBanner("관리자 로그인이 필요합니다.", "error");
+      return;
+    }
+
+    socket.emit("adminClearRuins");
+  };
+
+  document.getElementById("adminBroadcastBtn").onclick = () => {
+    if (!adminState.authenticated) {
+      setBanner("관리자 로그인이 필요합니다.", "error");
+      return;
+    }
+
+    const message = document.getElementById("adminBroadcastText").value.trim();
+
+    if (!message) {
+      setBanner("공지 내용을 입력하세요.", "error");
+      return;
+    }
+
+    socket.emit("adminBroadcast", { message });
+    document.getElementById("adminBroadcastText").value = "";
+  };
+
+  document.getElementById("adminTileOffBtn").onclick = () => {
+    selectedAdminTileMode = "off";
+    renderAdmin();
+  };
+  document.getElementById("adminTileClaimBtn").onclick = () => {
+    selectedAdminTileMode = "claim";
+    renderAdmin();
+  };
+  document.getElementById("adminTileNeutralBtn").onclick = () => {
+    selectedAdminTileMode = "neutral";
+    renderAdmin();
+  };
+  document.getElementById("adminTileRuinBtn").onclick = () => {
+    selectedAdminTileMode = "ruin";
+    renderAdmin();
+  };
+  document.getElementById("adminTileFortifyBtn").onclick = () => {
+    selectedAdminTileMode = "fortify";
+    renderAdmin();
+  };
+  document.getElementById("adminTeamBlueBtn").onclick = () => {
+    selectedAdminTeam = "blue";
+    renderAdmin();
+  };
+  document.getElementById("adminTeamRedBtn").onclick = () => {
+    selectedAdminTeam = "red";
+    renderAdmin();
+  };
+  document.getElementById("adminTeamGreenBtn").onclick = () => {
+    selectedAdminTeam = "green";
+    renderAdmin();
+  };
+  document.getElementById("adminTeamYellowBtn").onclick = () => {
+    selectedAdminTeam = "yellow";
+    renderAdmin();
+  };
+
   socket.on("connect", () => {
     renderConnection(true);
     setBanner("서버와 연결되었습니다.", "success");
@@ -1805,6 +2043,7 @@
     adminState = {
       ...adminState,
       ...(nextAdminState || {}),
+      suspiciousPlayers: Array.isArray(nextAdminState?.suspiciousPlayers) ? nextAdminState.suspiciousPlayers : [],
       onlinePlayers: Array.isArray(nextAdminState?.onlinePlayers) ? nextAdminState.onlinePlayers : [],
       bans: Array.isArray(nextAdminState?.bans) ? nextAdminState.bans : []
     };

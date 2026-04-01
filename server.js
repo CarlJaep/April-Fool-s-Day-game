@@ -29,6 +29,17 @@ const BROADCAST_INTERVAL_MS = Number(process.env.BROADCAST_INTERVAL_MS || 120);
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "admin1234").trim();
 const MAX_STUDENT_ID = Number(process.env.MAX_STUDENT_ID || 4444);
+const SOCKET_MAX_PAYLOAD_BYTES = Number(process.env.SOCKET_MAX_PAYLOAD_BYTES || 8 * 1024);
+const MAX_CONNECTIONS_PER_WINDOW = Number(process.env.MAX_CONNECTIONS_PER_WINDOW || 30);
+const CONNECTION_WINDOW_MS = Number(process.env.CONNECTION_WINDOW_MS || 10_000);
+const MAX_ADMIN_LOGIN_ATTEMPTS = Number(process.env.MAX_ADMIN_LOGIN_ATTEMPTS || 5);
+const ADMIN_LOGIN_WINDOW_MS = Number(process.env.ADMIN_LOGIN_WINDOW_MS || 10 * 60_000);
+const ADMIN_LOGIN_LOCKOUT_MS = Number(process.env.ADMIN_LOGIN_LOCKOUT_MS || 15 * 60_000);
+const SUSPICION_WINDOW_MS = Number(process.env.SUSPICION_WINDOW_MS || 20_000);
+const SUSPICION_AUTO_BAN_SCORE = Number(process.env.SUSPICION_AUTO_BAN_SCORE || 8);
+const DUPLICATE_CHAT_WINDOW_MS = Number(process.env.DUPLICATE_CHAT_WINDOW_MS || 12_000);
+const BOMB_SPAM_WINDOW_MS = Number(process.env.BOMB_SPAM_WINDOW_MS || 20_000);
+const BOMB_SPAM_THRESHOLD = Number(process.env.BOMB_SPAM_THRESHOLD || 3);
 
 const BASE_TILE_STRENGTH = Number(process.env.BASE_TILE_STRENGTH || 36);
 const NEUTRAL_TILE_STRENGTH = Number(process.env.NEUTRAL_TILE_STRENGTH || 22);
@@ -38,6 +49,8 @@ const FORTIFY_RATIO = Number(process.env.FORTIFY_RATIO || 0.6);
 const ACTION_GOLD_REWARD = Number(process.env.ACTION_GOLD_REWARD || 1);
 const CAPTURE_BONUS_GOLD = Number(process.env.CAPTURE_BONUS_GOLD || 8);
 const BOMB_COST = Number(process.env.BOMB_COST || 55);
+const BOMB_USE_PENALTY_GOLD = Number(process.env.BOMB_USE_PENALTY_GOLD || 18);
+const BOMB_BACKLASH_DAMAGE = Number(process.env.BOMB_BACKLASH_DAMAGE || 8);
 const REBUILD_COST = Number(process.env.REBUILD_COST || 28);
 const EXPAND_COST = Number(process.env.EXPAND_COST || 34);
 const EXPANDED_TILE_STRENGTH = Number(process.env.EXPANDED_TILE_STRENGTH || 18);
@@ -83,6 +96,16 @@ const ACHIEVEMENT_DEFS = [
 const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 
 const app = express();
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.use(cors({
   origin: allowedOrigins.length ? allowedOrigins : true
 }));
@@ -93,7 +116,8 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins.length ? allowedOrigins : true
-  }
+  },
+  maxHttpBufferSize: SOCKET_MAX_PAYLOAD_BYTES
 });
 
 const storage = await createStorage();
@@ -106,6 +130,8 @@ let sessions = {};
 let studentToSocketId = {};
 let chatHistory = [];
 let bans = {};
+let connectionAttempts = new Map();
+let adminLoginAttempts = new Map();
 
 let saveTimer = null;
 let saveChain = Promise.resolve();
@@ -125,6 +151,105 @@ function parseAllowedOrigins(value) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function getClientIp(rawValue) {
+  const value = String(rawValue || "").trim();
+
+  if (!value) {
+    return "unknown";
+  }
+
+  return value
+    .split(",")[0]
+    .trim()
+    .replace(/^::ffff:/, "");
+}
+
+function getRequestIp(req) {
+  return getClientIp(req?.headers?.["x-forwarded-for"] || req?.socket?.remoteAddress);
+}
+
+function getSocketIp(socket) {
+  return getClientIp(socket?.handshake?.headers?.["x-forwarded-for"] || socket?.handshake?.address);
+}
+
+function recordWindowAttempt(bucket, key, windowMs) {
+  const now = Date.now();
+  const current = bucket.get(key);
+
+  if (!current || now - current.windowStartedAt > windowMs) {
+    const next = {
+      windowStartedAt: now,
+      attempts: 1
+    };
+    bucket.set(key, next);
+    return next;
+  }
+
+  current.attempts += 1;
+  return current;
+}
+
+function pruneAttemptBuckets() {
+  const now = Date.now();
+  const connectionCutoff = CONNECTION_WINDOW_MS * 2;
+  const adminCutoff = Math.max(ADMIN_LOGIN_WINDOW_MS, ADMIN_LOGIN_LOCKOUT_MS) * 2;
+
+  connectionAttempts.forEach((entry, key) => {
+    if (now - entry.windowStartedAt > connectionCutoff) {
+      connectionAttempts.delete(key);
+    }
+  });
+
+  adminLoginAttempts.forEach((entry, key) => {
+    if ((entry.lockedUntil || 0) < now && now - entry.windowStartedAt > adminCutoff) {
+      adminLoginAttempts.delete(key);
+    }
+  });
+}
+
+function checkAdminLoginGuard(ip) {
+  const entry = adminLoginAttempts.get(ip);
+
+  if (!entry) {
+    return { ok: true };
+  }
+
+  const now = Date.now();
+
+  if (entry.lockedUntil && entry.lockedUntil > now) {
+    return {
+      ok: false,
+      reason: `관리자 로그인 시도가 너무 많습니다. ${Math.ceil((entry.lockedUntil - now) / 1000)}초 뒤 다시 시도하세요.`
+    };
+  }
+
+  return { ok: true };
+}
+
+function registerAdminLoginFailure(ip) {
+  const now = Date.now();
+  const entry = adminLoginAttempts.get(ip);
+
+  if (!entry || now - entry.windowStartedAt > ADMIN_LOGIN_WINDOW_MS) {
+    adminLoginAttempts.set(ip, {
+      windowStartedAt: now,
+      attempts: 1,
+      lockedUntil: 0
+    });
+    return;
+  }
+
+  entry.attempts += 1;
+
+  if (entry.attempts >= MAX_ADMIN_LOGIN_ATTEMPTS) {
+    entry.lockedUntil = now + ADMIN_LOGIN_LOCKOUT_MS;
+  }
+}
+
+function clearAdminLoginFailures(ip) {
+  adminLoginAttempts.delete(ip);
 }
 
 function createEmptyTeamMap(initialValue) {
@@ -556,6 +681,28 @@ function getOnlinePlayersForAdmin() {
     .sort((left, right) => left.studentId.localeCompare(right.studentId, "ko-KR"));
 }
 
+function getSuspiciousPlayersForAdmin() {
+  return Object.values(sessions)
+    .map((session) => {
+      const profile = profiles[session.studentId];
+
+      if (!profile || !session.suspicionScore) {
+        return null;
+      }
+
+      return {
+        studentId: profile.studentId,
+        team: profile.team,
+        teamLabel: TEAM_LABELS[profile.team],
+        suspicionScore: session.suspicionScore,
+        lastReason: session.suspicionReasons?.[0]?.reason || "의심 패턴 누적",
+        lastFlagAt: session.suspicionReasons?.[0]?.at || Date.now()
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.suspicionScore - left.suspicionScore);
+}
+
 function getBansForAdmin() {
   return Object.values(bans)
     .sort((left, right) => right.bannedAt - left.bannedAt);
@@ -571,7 +718,9 @@ function getAdminState(socket) {
   return {
     enabled: Boolean(ADMIN_PASSWORD),
     authenticated,
+    teams: Object.entries(TEAM_LABELS).map(([id, label]) => ({ id, label })),
     onlinePlayers: authenticated ? getOnlinePlayersForAdmin() : [],
+    suspiciousPlayers: authenticated ? getSuspiciousPlayersForAdmin() : [],
     bans: authenticated ? getBansForAdmin() : []
   };
 }
@@ -614,6 +763,8 @@ function getPublicMeta() {
     passiveTickMs: PASSIVE_TICK_MS,
     mapRadius: MAP_RADIUS,
     bombCost: BOMB_COST,
+    bombUsePenaltyGold: BOMB_USE_PENALTY_GOLD,
+    bombBacklashDamage: BOMB_BACKLASH_DAMAGE,
     rebuildCost: REBUILD_COST,
     expandCost: EXPAND_COST,
     teamSupplyCost: TEAM_SUPPLY_COST,
@@ -683,6 +834,16 @@ function emitPlayerState(socket) {
   if (profile) {
     socket.emit("playerState", getPlayerState(profile));
   }
+}
+
+function emitAllPlayerStates() {
+  Object.values(sessions).forEach((session) => {
+    const socket = io.sockets.sockets.get(session.socketId);
+
+    if (socket) {
+      emitPlayerState(socket);
+    }
+  });
 }
 
 function touchProfile(profile) {
@@ -851,6 +1012,60 @@ function registerRateLimitStrike(socket, session) {
   return false;
 }
 
+function flagSuspiciousActivity(socket, session, reason, weight = 1) {
+  const now = Date.now();
+
+  if (now - session.suspicionWindowStartedAt > SUSPICION_WINDOW_MS) {
+    session.suspicionWindowStartedAt = now;
+    session.suspicionScore = 0;
+    session.suspicionReasons = [];
+  }
+
+  session.suspicionScore += weight;
+  session.suspicionReasons = [
+    {
+      reason: String(reason || "의심 패턴"),
+      weight,
+      at: now
+    },
+    ...(Array.isArray(session.suspicionReasons) ? session.suspicionReasons : [])
+  ].slice(0, 6);
+
+  broadcastAdminState();
+
+  if (session.suspicionScore >= SUSPICION_AUTO_BAN_SCORE) {
+    const ban = banStudent(session.studentId, `분탕 패턴 감지: ${reason}`, "system");
+
+    if (ban) {
+      console.warn(`[moderation] auto-banned ${session.studentId} for suspicious activity: ${reason}`);
+      return true;
+    }
+  }
+
+  if (socket.connected) {
+    socket.emit("notice", `주의: 의심 행동이 감지되었습니다. 누적 점수 ${session.suspicionScore}`);
+  }
+
+  return false;
+}
+
+function registerBombUseSuspicion(socket, session) {
+  const now = Date.now();
+
+  if (now - session.bombWindowStartedAt > BOMB_SPAM_WINDOW_MS) {
+    session.bombWindowStartedAt = now;
+    session.bombsInWindow = 0;
+  }
+
+  session.bombsInWindow += 1;
+
+  if (session.bombsInWindow >= BOMB_SPAM_THRESHOLD) {
+    return flagSuspiciousActivity(socket, session, "폭탄 난사", 3);
+  }
+
+  return false;
+}
+
 function kickExistingSession(studentId, incomingSocketId) {
   const existingSocketId = studentToSocketId[studentId];
 
@@ -871,7 +1086,15 @@ function createSession(socket, studentId) {
     lastRateLimitNoticeAt: 0,
     lastChatAt: 0,
     rateLimitWindowStartedAt: 0,
-    rateLimitStrikes: 0
+    rateLimitStrikes: 0,
+    suspicionWindowStartedAt: 0,
+    suspicionScore: 0,
+    suspicionReasons: [],
+    lastChatText: "",
+    repeatedChatCount: 0,
+    repeatedChatWindowStartedAt: 0,
+    bombWindowStartedAt: 0,
+    bombsInWindow: 0
   };
 
   studentToSocketId[studentId] = socket.id;
@@ -1022,7 +1245,33 @@ function attackTile(profile, tile) {
   };
 }
 
-function bombTile(profile, tile) {
+function applyBombPenalty(profile) {
+  if (profile.gold < BOMB_USE_PENALTY_GOLD) {
+    return {
+      ok: false,
+      reason: `폭탄 사용 후폭풍 비용 ${BOMB_USE_PENALTY_GOLD} 골드가 필요합니다.`
+    };
+  }
+
+  profile.gold -= BOMB_USE_PENALTY_GOLD;
+
+  const ownedTiles = Object.values(tiles)
+    .filter((candidate) => candidate.active && !candidate.base && candidate.owner === profile.team)
+    .sort((left, right) => right.strength - left.strength);
+
+  const weakenedTile = ownedTiles[0] || null;
+
+  if (weakenedTile) {
+    weakenedTile.strength = clampStrength(weakenedTile.strength - BOMB_BACKLASH_DAMAGE);
+  }
+
+  return {
+    ok: true,
+    weakenedTile
+  };
+}
+
+function bombTile(socket, session, profile, tile) {
   if (!tile.active) {
     return { ok: false, reason: "이미 비활성화된 칸입니다." };
   }
@@ -1031,8 +1280,19 @@ function bombTile(profile, tile) {
     return { ok: false, reason: "본진에는 폭탄을 사용할 수 없습니다." };
   }
 
+  if (tile.owner === profile.team) {
+    flagSuspiciousActivity(socket, session, "아군 타일 폭탄 시도", 4);
+    return { ok: false, reason: "아군 타일에는 폭탄을 사용할 수 없습니다." };
+  }
+
   if (profile.bombCount <= 0) {
     return { ok: false, reason: "보유한 폭탄이 없습니다." };
+  }
+
+  const penalty = applyBombPenalty(profile);
+
+  if (!penalty.ok) {
+    return penalty;
   }
 
   profile.bombCount -= 1;
@@ -1041,13 +1301,17 @@ function bombTile(profile, tile) {
   profile.warPoints += Math.max(8, tile.strength);
   touchProfile(profile);
 
+  registerBombUseSuspicion(socket, session);
+
   tile.active = false;
   tile.owner = null;
   tile.strength = 0;
 
   return {
     ok: true,
-    notice: "폭탄 투하 성공, 타일이 비활성화되었습니다."
+    notice: penalty.weakenedTile
+      ? `폭탄 투하 성공, 타일이 비활성화되었습니다. 후폭풍으로 아군 타일 1칸이 ${BOMB_BACKLASH_DAMAGE} 약화`
+      : `폭탄 투하 성공, 타일이 비활성화되었습니다. 후폭풍 비용 ${BOMB_USE_PENALTY_GOLD} 골드 차감`
   };
 }
 
@@ -1159,7 +1423,7 @@ function handleTileClick(socket, { q, r, mode }) {
   }
 
   const result = actionMode === "bomb"
-    ? bombTile(profile, tile)
+    ? bombTile(socket, session, profile, tile)
     : (actionMode === "rebuild"
       ? rebuildTile(profile, tile)
       : (tile.owner === profile.team ? fortifyTile(profile, tile) : attackTile(profile, tile)));
@@ -1303,6 +1567,28 @@ function handleChatMessage(socket, rawText) {
     return;
   }
 
+  if (now - session.repeatedChatWindowStartedAt > DUPLICATE_CHAT_WINDOW_MS) {
+    session.repeatedChatWindowStartedAt = now;
+    session.repeatedChatCount = 0;
+    session.lastChatText = "";
+  }
+
+  if (session.lastChatText === text) {
+    session.repeatedChatCount += 1;
+  } else {
+    session.lastChatText = text;
+    session.repeatedChatCount = 1;
+  }
+
+  if (session.repeatedChatCount >= 3) {
+    const banned = flagSuspiciousActivity(socket, session, "반복 도배 채팅", 3);
+
+    if (!banned) {
+      reject(socket, "같은 채팅을 반복해서 보낼 수 없습니다.");
+    }
+    return;
+  }
+
   session.lastChatAt = now;
   profile.totalMessages += 1;
   touchProfile(profile);
@@ -1321,11 +1607,21 @@ function handleAdminLogin(socket, rawPassword) {
     return;
   }
 
+  const ip = getSocketIp(socket);
+  const guard = checkAdminLoginGuard(ip);
+
+  if (!guard.ok) {
+    reject(socket, guard.reason);
+    return;
+  }
+
   if (String(rawPassword || "").trim() !== ADMIN_PASSWORD) {
+    registerAdminLoginFailure(ip);
     reject(socket, "관리자 비밀번호가 올바르지 않습니다.");
     return;
   }
 
+  clearAdminLoginFailures(ip);
   socket.data.isAdmin = true;
   socket.emit("notice", "관리자 콘솔에 연결되었습니다.");
   emitAdminState(socket);
@@ -1388,18 +1684,323 @@ function handleAdminUnban(socket, payload) {
   queueSave();
 }
 
+function handleAdminGrantGold(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const validation = validateStudentId(payload?.studentId);
+
+  if (!validation.ok) {
+    reject(socket, validation.reason);
+    return;
+  }
+
+  const amount = Math.round(Number(payload?.amount));
+
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 100000) {
+    reject(socket, "골드 지급량은 -100000~100000 사이의 정수여야 합니다.");
+    return;
+  }
+
+  const team = getTeamFromStudentId(validation.normalized);
+
+  if (!team) {
+    reject(socket, "유효한 플레이어만 조작할 수 있습니다.");
+    return;
+  }
+
+  const profile = ensureProfile(validation.normalized, team);
+  profile.gold = Math.max(0, profile.gold + amount);
+  touchProfile(profile);
+
+  const targetSocketId = studentToSocketId[validation.normalized];
+  const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
+
+  if (targetSocket) {
+    targetSocket.emit("notice", `관리자가 골드를 조정했습니다. ${amount > 0 ? "+" : ""}${amount} 골드`);
+    emitPlayerState(targetSocket);
+  }
+
+  socket.emit("notice", `${validation.normalized} 골드를 ${amount > 0 ? "+" : ""}${amount} 조정했습니다.`);
+  broadcastAdminState();
+  queueSave();
+}
+
+function handleAdminGrantTeamGold(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const team = String(payload?.team || "").trim();
+  const amount = Math.round(Number(payload?.amount));
+
+  if (!TEAM_LABELS[team]) {
+    reject(socket, "지급할 팀을 선택하세요.");
+    return;
+  }
+
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 100000) {
+    reject(socket, "골드 지급량은 -100000~100000 사이의 정수여야 합니다.");
+    return;
+  }
+
+  let affected = 0;
+
+  Object.entries(profiles).forEach(([studentId, profile]) => {
+    if (profile.team !== team) {
+      return;
+    }
+
+    profile.gold = Math.max(0, profile.gold + amount);
+    touchProfile(profile);
+    affected += 1;
+
+    const targetSocketId = studentToSocketId[studentId];
+    const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
+
+    if (targetSocket) {
+      targetSocket.emit("notice", `관리자가 ${TEAM_LABELS[team]} 전체 골드를 조정했습니다. ${amount > 0 ? "+" : ""}${amount} 골드`);
+      emitPlayerState(targetSocket);
+    }
+  });
+
+  socket.emit("notice", `${TEAM_LABELS[team]} 소속 ${affected}명 골드를 ${amount > 0 ? "+" : ""}${amount} 조정했습니다.`);
+  broadcastAdminState();
+  queueSave();
+}
+
+function handleAdminGrantAllGold(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const amount = Math.round(Number(payload?.amount));
+
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 100000) {
+    reject(socket, "골드 지급량은 -100000~100000 사이의 정수여야 합니다.");
+    return;
+  }
+
+  let affected = 0;
+
+  Object.entries(profiles).forEach(([studentId, profile]) => {
+    profile.gold = Math.max(0, profile.gold + amount);
+    touchProfile(profile);
+    affected += 1;
+
+    const targetSocketId = studentToSocketId[studentId];
+    const targetSocket = targetSocketId ? io.sockets.sockets.get(targetSocketId) : null;
+
+    if (targetSocket) {
+      targetSocket.emit("notice", `관리자가 전체 골드를 조정했습니다. ${amount > 0 ? "+" : ""}${amount} 골드`);
+      emitPlayerState(targetSocket);
+    }
+  });
+
+  socket.emit("notice", `전체 ${affected}명 골드를 ${amount > 0 ? "+" : ""}${amount} 조정했습니다.`);
+  broadcastAdminState();
+  queueSave();
+}
+
+function handleAdminClearRuins(socket) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  let cleared = 0;
+
+  Object.values(tiles).forEach((tile) => {
+    if (tile.base || tile.active) {
+      return;
+    }
+
+    tile.active = true;
+    tile.owner = null;
+    tile.strength = NEUTRAL_TILE_STRENGTH;
+    cleared += 1;
+  });
+
+  recomputeBoardStats();
+  emitAllPlayerStates();
+  queueBroadcast();
+  queueSave();
+  socket.emit("notice", `폐허 ${cleared}칸을 중립 지대로 복구했습니다.`);
+}
+
+function handleAdminBroadcast(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const message = String(payload?.message || "").trim().replace(/\s+/g, " ").slice(0, 160);
+
+  if (!message) {
+    reject(socket, "공지 내용을 입력하세요.");
+    return;
+  }
+
+  Object.values(sessions).forEach((session) => {
+    const targetSocket = io.sockets.sockets.get(session.socketId);
+
+    if (targetSocket) {
+      targetSocket.emit("notice", `[관리자 공지] ${message}`);
+    }
+  });
+
+  appendChatMessage({
+    id: `admin-${Date.now()}`,
+    team: "yellow",
+    teamLabel: "관리자",
+    author: "SYSTEM",
+    text: `[공지] ${message}`,
+    createdAt: Date.now()
+  });
+
+  io.emit("chatMessage", chatHistory[chatHistory.length - 1]);
+  socket.emit("notice", "전체 공지를 발송했습니다.");
+  queueSave();
+}
+
+function resetProfileProgress(studentId, team) {
+  const profile = buildNewProfile(studentId, team);
+  profiles[studentId] = profile;
+  return profile;
+}
+
+function handleAdminResetGame(socket) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  tiles = buildFreshTiles();
+  chatHistory = [];
+
+  Object.keys(profiles).forEach((studentId) => {
+    const team = getTeamFromStudentId(studentId);
+
+    if (team) {
+      resetProfileProgress(studentId, team);
+    }
+  });
+
+  Object.values(sessions).forEach((session) => {
+    const team = getTeamFromStudentId(session.studentId);
+
+    if (team && !profiles[session.studentId]) {
+      resetProfileProgress(session.studentId, team);
+    }
+  });
+
+  recomputeBoardStats();
+  emitAllPlayerStates();
+  queueBroadcast();
+  broadcastAdminState();
+  queueSave();
+  socket.emit("notice", "게임을 초기 상태로 리셋했습니다.");
+}
+
+function getOrCreateAdminTile(q, r) {
+  const tileKey = key(q, r);
+
+  if (!tiles[tileKey]) {
+    tiles[tileKey] = {
+      q,
+      r,
+      owner: null,
+      active: true,
+      strength: NEUTRAL_TILE_STRENGTH,
+      base: isBasePosition(q, r)
+    };
+  }
+
+  return tiles[tileKey];
+}
+
+function handleAdminTileAction(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const q = Math.round(Number(payload?.q));
+  const r = Math.round(Number(payload?.r));
+  const mode = String(payload?.mode || "").trim();
+  const team = String(payload?.team || "").trim();
+
+  if (!Number.isFinite(q) || !Number.isFinite(r)) {
+    reject(socket, "타일 좌표가 올바르지 않습니다.");
+    return;
+  }
+
+  const tile = getOrCreateAdminTile(q, r);
+
+  if (mode === "claim") {
+    if (!TEAM_LABELS[team]) {
+      reject(socket, "강제 점령 팀을 선택하세요.");
+      return;
+    }
+
+    tile.active = true;
+    tile.owner = team;
+    tile.strength = MAX_TILE_STRENGTH;
+  } else if (mode === "neutral") {
+    tile.active = true;
+    tile.owner = null;
+    tile.strength = NEUTRAL_TILE_STRENGTH;
+  } else if (mode === "ruin") {
+    tile.active = false;
+    tile.owner = null;
+    tile.strength = 0;
+  } else if (mode === "fortify") {
+    tile.active = true;
+    if (TEAM_LABELS[team]) {
+      tile.owner = team;
+    }
+    tile.strength = MAX_TILE_STRENGTH;
+  } else {
+    reject(socket, "알 수 없는 관리자 타일 명령입니다.");
+    return;
+  }
+
+  recomputeBoardStats();
+  emitAllPlayerStates();
+  queueBroadcast();
+  broadcastAdminState();
+  queueSave();
+  socket.emit("notice", `타일 (${q}, ${r}) 에 관리자 명령 ${mode} 적용 완료`);
+}
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     onlinePlayers: Object.keys(sessions).length,
     storage: storage.mode,
     bombCost: BOMB_COST,
+    socketMaxPayloadBytes: SOCKET_MAX_PAYLOAD_BYTES,
     teamTileCounts,
     teamStrengthTotals
   });
 });
 
 io.on("connection", (socket) => {
+  pruneAttemptBuckets();
+
+  const ip = getSocketIp(socket);
+  const connectionEntry = recordWindowAttempt(connectionAttempts, ip, CONNECTION_WINDOW_MS);
+
+  if (connectionEntry.attempts > MAX_CONNECTIONS_PER_WINDOW) {
+    socket.emit("actionRejected", "접속 시도가 너무 많습니다. 잠시 후 다시 시도하세요.");
+    socket.disconnect(true);
+    return;
+  }
+
   socket.emit("gameState", getGameState());
   emitAdminState(socket);
 
@@ -1441,6 +2042,34 @@ io.on("connection", (socket) => {
 
   socket.on("adminUnban", (payload) => {
     handleAdminUnban(socket, payload);
+  });
+
+  socket.on("adminGrantGold", (payload) => {
+    handleAdminGrantGold(socket, payload);
+  });
+
+  socket.on("adminGrantTeamGold", (payload) => {
+    handleAdminGrantTeamGold(socket, payload);
+  });
+
+  socket.on("adminGrantAllGold", (payload) => {
+    handleAdminGrantAllGold(socket, payload);
+  });
+
+  socket.on("adminClearRuins", () => {
+    handleAdminClearRuins(socket);
+  });
+
+  socket.on("adminBroadcast", (payload) => {
+    handleAdminBroadcast(socket, payload);
+  });
+
+  socket.on("adminResetGame", () => {
+    handleAdminResetGame(socket);
+  });
+
+  socket.on("adminTileAction", (payload) => {
+    handleAdminTileAction(socket, payload);
   });
 
   socket.on("disconnect", () => {
