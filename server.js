@@ -19,6 +19,9 @@ const BOOST_STEP = Number(process.env.BOOST_STEP || 0.25);
 const MAX_CLICKS_PER_WINDOW = Number(process.env.MAX_CLICKS_PER_WINDOW || 18);
 const CLICK_WINDOW_MS = Number(process.env.CLICK_WINDOW_MS || 1000);
 const CLICK_RATE_LIMIT_COOLDOWN_MS = Number(process.env.CLICK_RATE_LIMIT_COOLDOWN_MS || 2500);
+const CHAT_COOLDOWN_MS = Number(process.env.CHAT_COOLDOWN_MS || 700);
+const CHAT_HISTORY_LIMIT = Number(process.env.CHAT_HISTORY_LIMIT || 40);
+const MAX_CHAT_LENGTH = Number(process.env.MAX_CHAT_LENGTH || 140);
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS || 400);
 const BROADCAST_INTERVAL_MS = Number(process.env.BROADCAST_INTERVAL_MS || 120);
 const PORT = Number(process.env.PORT || 3000);
@@ -60,6 +63,17 @@ const BASE_POSITIONS = {
   yellow: { q: MAP_RADIUS, r: 0 }
 };
 
+const ACHIEVEMENT_DEFS = [
+  { id: "first_capture", title: "첫 점령", description: "처음으로 적 또는 중립 영토를 점령했습니다." },
+  { id: "frontier_builder", title: "개척자", description: "미개척 지대에 새로운 땅을 만들었습니다." },
+  { id: "restorer", title: "복구반", description: "폐허를 재건했습니다." },
+  { id: "demolition", title: "폭파 전문가", description: "폭탄을 3번 사용했습니다." },
+  { id: "fortress", title: "성벽 장인", description: "방어력을 120 이상 보강했습니다." },
+  { id: "field_commander", title: "전장 지휘관", description: "전투 행동을 50번 수행했습니다." },
+  { id: "warlord", title: "워로드", description: "전쟁 점수 500점을 달성했습니다." },
+  { id: "chatter", title: "수다 지휘관", description: "채팅을 10번 보냈습니다." }
+];
+
 const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 
 const app = express();
@@ -84,6 +98,7 @@ let teamTileCounts = createEmptyTeamMap(0);
 let teamStrengthTotals = createEmptyTeamMap(0);
 let sessions = {};
 let studentToSocketId = {};
+let chatHistory = [];
 
 let saveTimer = null;
 let saveChain = Promise.resolve();
@@ -131,6 +146,24 @@ function parseTileKey(tileKey) {
 
 function isBasePosition(q, r) {
   return Object.values(BASE_POSITIONS).some((position) => position.q === q && position.r === r);
+}
+
+function sanitizeChatHistory(rawChatHistory) {
+  if (!Array.isArray(rawChatHistory)) {
+    return [];
+  }
+
+  return rawChatHistory
+    .filter((entry) => entry && typeof entry === "object")
+    .slice(-CHAT_HISTORY_LIMIT)
+    .map((entry) => ({
+      id: String(entry.id || `${Date.now()}-${Math.random()}`),
+      team: typeof entry.team === "string" && TEAM_LABELS[entry.team] ? entry.team : "blue",
+      teamLabel: TEAM_LABELS[typeof entry.team === "string" && TEAM_LABELS[entry.team] ? entry.team : "blue"],
+      author: String(entry.author || "익명"),
+      text: String(entry.text || "").slice(0, MAX_CHAT_LENGTH),
+      createdAt: Number(entry.createdAt || Date.now())
+    }));
 }
 
 function buildFreshTiles() {
@@ -261,7 +294,7 @@ function getMultiplier(profile) {
 }
 
 function getAttackPower(profile) {
-  return Math.max(4, Math.round((5 + profile.clickLevel * 2) * getMultiplier(profile)));
+  return Math.max(2, Math.round((2 + profile.clickLevel * 2) * getMultiplier(profile)));
 }
 
 function getAutoIncome(profile) {
@@ -286,7 +319,12 @@ function buildNewProfile(studentId, team) {
     totalActions: 0,
     totalCaptures: 0,
     totalFortifies: 0,
+    totalBombsUsed: 0,
+    totalRebuilds: 0,
+    totalExpansions: 0,
+    totalMessages: 0,
     warPoints: 0,
+    achievements: [],
     createdAt: now,
     updatedAt: now,
     lastSeenAt: now
@@ -320,7 +358,12 @@ function normalizeProfile(studentId, rawProfile) {
     totalActions: Number(rawProfile.totalActions ?? rawProfile.totalClicks ?? base.totalActions),
     totalCaptures: Number(rawProfile.totalCaptures ?? base.totalCaptures),
     totalFortifies: Number(rawProfile.totalFortifies ?? base.totalFortifies),
+    totalBombsUsed: Number(rawProfile.totalBombsUsed ?? base.totalBombsUsed),
+    totalRebuilds: Number(rawProfile.totalRebuilds ?? base.totalRebuilds),
+    totalExpansions: Number(rawProfile.totalExpansions ?? base.totalExpansions),
+    totalMessages: Number(rawProfile.totalMessages ?? base.totalMessages),
     warPoints: Number(rawProfile.warPoints ?? rawProfile.totalContributed ?? base.warPoints),
+    achievements: Array.isArray(rawProfile.achievements) ? rawProfile.achievements.map((value) => String(value)) : [],
     createdAt: Number(rawProfile.createdAt ?? base.createdAt),
     updatedAt: Number(rawProfile.updatedAt ?? base.updatedAt),
     lastSeenAt: Number(rawProfile.lastSeenAt ?? base.lastSeenAt)
@@ -361,6 +404,7 @@ function recomputeBoardStats() {
 function restoreState(state) {
   profiles = sanitizeProfiles(state?.profiles || {});
   tiles = sanitizeTiles(state?.tiles);
+  chatHistory = sanitizeChatHistory(state?.chatHistory);
   sessions = {};
   studentToSocketId = {};
   recomputeBoardStats();
@@ -371,7 +415,8 @@ function getPersistedState() {
     version: 2,
     savedAt: Date.now(),
     profiles,
-    tiles
+    tiles,
+    chatHistory
   };
 }
 
@@ -455,7 +500,9 @@ function getPublicMeta() {
     teamTileCounts,
     teamStrengthTotals,
     teamPlayerCounts: getOnlineCounts(),
-    topPlayers: getTopPlayers()
+    topPlayers: getTopPlayers(),
+    chatHistory,
+    achievementDefs: ACHIEVEMENT_DEFS
   };
 }
 
@@ -482,8 +529,13 @@ function getPlayerState(profile) {
     totalActions: profile.totalActions,
     totalCaptures: profile.totalCaptures,
     totalFortifies: profile.totalFortifies,
+    totalBombsUsed: profile.totalBombsUsed,
+    totalRebuilds: profile.totalRebuilds,
+    totalExpansions: profile.totalExpansions,
+    totalMessages: profile.totalMessages,
     warPoints: profile.warPoints,
     teamTerritoryCount: teamTileCounts[profile.team],
+    achievements: profile.achievements,
     nextCosts: {
       click: calculateUpgradeCost("click", profile.clickLevel),
       auto: calculateUpgradeCost("auto", profile.autoLevel),
@@ -517,6 +569,55 @@ function touchProfile(profile) {
   const now = Date.now();
   profile.updatedAt = now;
   profile.lastSeenAt = now;
+}
+
+function buildChatMessage(profile, text) {
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    team: profile.team,
+    teamLabel: TEAM_LABELS[profile.team],
+    author: maskStudentId(profile.studentId),
+    text,
+    createdAt: Date.now()
+  };
+}
+
+function appendChatMessage(message) {
+  chatHistory = [...chatHistory, message].slice(-CHAT_HISTORY_LIMIT);
+}
+
+function evaluateAchievements(profile) {
+  const unlocked = [];
+  const owned = new Set(profile.achievements);
+
+  const maybeUnlock = (id, condition) => {
+    if (!owned.has(id) && condition) {
+      owned.add(id);
+      unlocked.push(ACHIEVEMENT_DEFS.find((entry) => entry.id === id));
+    }
+  };
+
+  maybeUnlock("first_capture", profile.totalCaptures >= 1);
+  maybeUnlock("frontier_builder", profile.totalExpansions >= 1);
+  maybeUnlock("restorer", profile.totalRebuilds >= 1);
+  maybeUnlock("demolition", profile.totalBombsUsed >= 3);
+  maybeUnlock("fortress", profile.totalFortifies >= 120);
+  maybeUnlock("field_commander", profile.totalActions >= 50);
+  maybeUnlock("warlord", profile.warPoints >= 500);
+  maybeUnlock("chatter", profile.totalMessages >= 10);
+
+  profile.achievements = Array.from(owned);
+  return unlocked.filter(Boolean);
+}
+
+function emitUnlockedAchievements(socket, profile) {
+  const unlocked = evaluateAchievements(profile);
+
+  unlocked.forEach((achievement) => {
+    socket.emit("achievementUnlocked", achievement);
+  });
+
+  return unlocked;
 }
 
 function ensureProfile(studentId, team) {
@@ -576,7 +677,8 @@ function createSession(socket, studentId) {
     clickWindowStartedAt: 0,
     clicksInWindow: 0,
     cooldownUntil: 0,
-    lastRateLimitNoticeAt: 0
+    lastRateLimitNoticeAt: 0,
+    lastChatAt: 0
   };
 
   studentToSocketId[studentId] = socket.id;
@@ -722,6 +824,7 @@ function bombTile(profile, tile) {
 
   profile.bombCount -= 1;
   profile.totalActions += 1;
+  profile.totalBombsUsed += 1;
   profile.warPoints += Math.max(8, tile.strength);
   touchProfile(profile);
 
@@ -751,6 +854,7 @@ function rebuildTile(profile, tile) {
   profile.gold -= REBUILD_COST;
   profile.totalActions += 1;
   profile.totalCaptures += 1;
+  profile.totalRebuilds += 1;
   profile.warPoints += EXPANDED_TILE_STRENGTH;
   touchProfile(profile);
 
@@ -782,6 +886,7 @@ function expandTerritory(profile, q, r) {
   profile.gold -= EXPAND_COST;
   profile.totalActions += 1;
   profile.totalCaptures += 1;
+  profile.totalExpansions += 1;
   profile.warPoints += EXPANDED_TILE_STRENGTH;
   touchProfile(profile);
 
@@ -827,6 +932,7 @@ function handleTileClick(socket, { q, r, mode }) {
     }
 
     recomputeBoardStats();
+    emitUnlockedAchievements(socket, profile);
     socket.emit("notice", result.notice);
     emitPlayerState(socket);
     queueBroadcast();
@@ -851,6 +957,7 @@ function handleTileClick(socket, { q, r, mode }) {
   }
 
   recomputeBoardStats();
+  emitUnlockedAchievements(socket, profile);
   socket.emit("notice", result.notice);
   emitPlayerState(socket);
   queueBroadcast();
@@ -909,6 +1016,41 @@ function handleUpgrade(socket, type) {
   queueSave();
 }
 
+function handleChatMessage(socket, rawText) {
+  const session = getSession(socket.id);
+  const profile = getProfileBySocket(socket.id);
+
+  if (!session || !profile) {
+    reject(socket, "먼저 입장해야 합니다.");
+    return;
+  }
+
+  const now = Date.now();
+
+  if (now - session.lastChatAt < CHAT_COOLDOWN_MS) {
+    reject(socket, "채팅을 너무 빠르게 보내고 있습니다.");
+    return;
+  }
+
+  const text = String(rawText || "").trim().replace(/\s+/g, " ").slice(0, MAX_CHAT_LENGTH);
+
+  if (!text) {
+    reject(socket, "빈 메시지는 보낼 수 없습니다.");
+    return;
+  }
+
+  session.lastChatAt = now;
+  profile.totalMessages += 1;
+  touchProfile(profile);
+
+  const message = buildChatMessage(profile, text);
+  appendChatMessage(message);
+  emitUnlockedAchievements(socket, profile);
+  io.emit("chatMessage", message);
+  emitPlayerState(socket);
+  queueSave();
+}
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -937,6 +1079,10 @@ io.on("connection", (socket) => {
 
   socket.on("buyBomb", () => {
     handleBuyBomb(socket);
+  });
+
+  socket.on("chatMessage", (text) => {
+    handleChatMessage(socket, text);
   });
 
   socket.on("disconnect", () => {

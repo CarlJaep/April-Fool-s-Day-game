@@ -378,10 +378,21 @@
     min-height: 760px;
     border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    overflow: hidden;
+    overflow: auto;
     background:
       radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 56%),
       linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+    cursor: grab;
+    scrollbar-width: none;
+  }
+
+  .board-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .board-wrap.dragging {
+    cursor: grabbing;
+    user-select: none;
   }
 
   #board {
@@ -454,6 +465,83 @@
   .feed {
     max-height: 260px;
     overflow: auto;
+  }
+
+  .chat-list,
+  .achievement-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .chat-list {
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  .chat-item,
+  .achievement-card {
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .chat-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .chat-author {
+    font-weight: 700;
+  }
+
+  .chat-text {
+    line-height: 1.5;
+    word-break: break-word;
+  }
+
+  .chat-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .chat-send-btn {
+    padding: 12px 16px;
+    color: var(--text);
+    background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(79, 224, 155, 0.16));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .achievement-card.unlocked {
+    border-color: rgba(74, 222, 128, 0.26);
+    background: rgba(74, 222, 128, 0.08);
+  }
+
+  .achievement-card.locked {
+    opacity: 0.68;
+  }
+
+  .achievement-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+
+  .achievement-state {
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .achievement-card.unlocked .achievement-state {
+    color: var(--good);
   }
 
   @media (max-width: 1260px) {
@@ -552,6 +640,15 @@
         <h2>최근 알림</h2>
         <div id="feed" class="feed"></div>
       </section>
+
+      <section class="card section">
+        <h2>전장 채팅</h2>
+        <div id="chatList" class="chat-list"></div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" maxlength="140" placeholder="전선 상황을 입력하세요">
+          <button id="chatSendBtn" class="chat-send-btn" type="submit">전송</button>
+        </form>
+      </section>
     </aside>
 
     <main class="card board-card">
@@ -588,6 +685,12 @@
       <section class="card section">
         <h2>업그레이드</h2>
         <div id="upgrades" class="upgrade-list"></div>
+      </section>
+
+      <section class="card section">
+        <h2>업적</h2>
+        <div id="achievementSummary" class="helper">업적 정보를 불러오는 중...</div>
+        <div id="achievements" class="achievement-list"></div>
       </section>
 
       <section class="card section">
@@ -655,13 +758,18 @@
     teamTileCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamStrengthTotals: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
-    topPlayers: []
+    topPlayers: [],
+    chatHistory: [],
+    achievementDefs: []
   };
   let player = null;
   let selectedMode = "battle";
   let lastStudentId = "";
   let hasJoinedOnce = false;
   let feedItems = ["서버 상태를 기다리는 중입니다."];
+  let boardViewportInitialized = false;
+  let boardDragState = null;
+  let boardJustDraggedUntil = 0;
 
   function key(q, r) {
     return `${q},${r}`;
@@ -669,6 +777,13 @@
 
   function formatNumber(value) {
     return new Intl.NumberFormat("ko-KR").format(Math.floor(value || 0));
+  }
+
+  function formatClock(value) {
+    return new Date(value).toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   }
 
   function neighbors(tile) {
@@ -764,6 +879,107 @@
     const pill = document.getElementById("connPill");
     pill.classList.toggle("connected", connected);
     pill.textContent = connected ? "서버 연결됨" : "서버 재연결 중";
+  }
+
+  function centerBoardViewport() {
+    const boardWrap = document.querySelector(".board-wrap");
+    const board = document.getElementById("board");
+
+    if (!boardWrap || !board) {
+      return;
+    }
+
+    boardWrap.scrollLeft = Math.max(0, (board.scrollWidth - boardWrap.clientWidth) / 2);
+    boardWrap.scrollTop = Math.max(0, (board.scrollHeight - boardWrap.clientHeight) / 2);
+  }
+
+  function initBoardViewport() {
+    const boardWrap = document.querySelector(".board-wrap");
+
+    if (!boardWrap || boardViewportInitialized) {
+      return;
+    }
+
+    boardViewportInitialized = true;
+
+    const startDrag = (clientX, clientY) => {
+      boardDragState = {
+        startX: clientX,
+        startY: clientY,
+        startScrollLeft: boardWrap.scrollLeft,
+        startScrollTop: boardWrap.scrollTop,
+        didMove: false
+      };
+      boardWrap.classList.add("dragging");
+    };
+
+    const moveDrag = (clientX, clientY) => {
+      if (!boardDragState) {
+        return;
+      }
+
+      const deltaX = clientX - boardDragState.startX;
+      const deltaY = clientY - boardDragState.startY;
+      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
+        boardDragState.didMove = true;
+      }
+
+      boardWrap.scrollLeft = boardDragState.startScrollLeft - (clientX - boardDragState.startX);
+      boardWrap.scrollTop = boardDragState.startScrollTop - (clientY - boardDragState.startY);
+    };
+
+    const endDrag = () => {
+      if (boardDragState?.didMove) {
+        boardJustDraggedUntil = Date.now() + 150;
+      }
+
+      boardDragState = null;
+      boardWrap.classList.remove("dragging");
+    };
+
+    boardWrap.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      startDrag(event.clientX, event.clientY);
+    });
+
+    window.addEventListener("mousemove", (event) => {
+      moveDrag(event.clientX, event.clientY);
+    });
+
+    window.addEventListener("mouseup", () => {
+      endDrag();
+    });
+
+    boardWrap.addEventListener("mouseleave", () => {
+      endDrag();
+    });
+
+    boardWrap.addEventListener("touchstart", (event) => {
+      const touch = event.touches[0];
+
+      if (!touch) {
+        return;
+      }
+
+      startDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    boardWrap.addEventListener("touchmove", (event) => {
+      const touch = event.touches[0];
+
+      if (!touch) {
+        return;
+      }
+
+      moveDrag(touch.clientX, touch.clientY);
+    }, { passive: true });
+
+    boardWrap.addEventListener("touchend", () => {
+      endDrag();
+    });
   }
 
   function renderInfo() {
@@ -866,6 +1082,90 @@
     });
   }
 
+  function renderAchievements() {
+    const container = document.getElementById("achievements");
+    const summary = document.getElementById("achievementSummary");
+    const defs = Array.isArray(meta.achievementDefs) ? meta.achievementDefs : [];
+    const owned = new Set(player && Array.isArray(player.achievements) ? player.achievements : []);
+
+    container.innerHTML = "";
+
+    if (!defs.length) {
+      summary.textContent = "업적 정보를 아직 받지 못했습니다.";
+      const item = document.createElement("div");
+      item.className = "achievement-card locked";
+      item.innerHTML = `<div class="muted">서버 업적 정보를 기다리는 중입니다.</div>`;
+      container.appendChild(item);
+      return;
+    }
+
+    if (!player) {
+      summary.textContent = `전체 ${defs.length}개 업적이 준비되어 있습니다. 입장 후 진행 상황이 표시됩니다.`;
+    } else {
+      summary.textContent = `달성 ${owned.size} / ${defs.length} · 전투, 폭탄, 재건, 개척, 채팅 기록으로 업적이 열립니다.`;
+    }
+
+    defs.forEach((entry) => {
+      const unlocked = owned.has(entry.id);
+      const card = document.createElement("div");
+      card.className = `achievement-card ${unlocked ? "unlocked" : "locked"}`;
+      card.innerHTML = `
+        <div class="achievement-head">
+          <span>${entry.title}</span>
+          <span class="achievement-state">${unlocked ? "달성" : "잠김"}</span>
+        </div>
+        <div class="muted">${entry.description}</div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function renderChat() {
+    const container = document.getElementById("chatList");
+    const input = document.getElementById("chatInput");
+    const sendButton = document.getElementById("chatSendBtn");
+    const history = Array.isArray(meta.chatHistory) ? meta.chatHistory : [];
+
+    container.innerHTML = "";
+
+    if (!history.length) {
+      const item = document.createElement("div");
+      item.className = "chat-item";
+      item.innerHTML = `<div class="muted">아직 전장 보고가 없습니다. 첫 메시지를 남겨 보세요.</div>`;
+      container.appendChild(item);
+    } else {
+      history.slice().reverse().forEach((entry) => {
+        const item = document.createElement("div");
+        item.className = "chat-item";
+
+        const metaRow = document.createElement("div");
+        metaRow.className = "chat-meta";
+
+        const author = document.createElement("span");
+        author.className = "chat-author";
+        author.style.color = colors[entry.team] || "var(--text)";
+        author.textContent = `${entry.teamLabel} ${entry.author}`;
+
+        const time = document.createElement("span");
+        time.textContent = formatClock(entry.createdAt);
+
+        const text = document.createElement("div");
+        text.className = "chat-text";
+        text.textContent = entry.text;
+
+        metaRow.appendChild(author);
+        metaRow.appendChild(time);
+        item.appendChild(metaRow);
+        item.appendChild(text);
+        container.appendChild(item);
+      });
+    }
+
+    input.disabled = !player;
+    sendButton.disabled = !player;
+    input.placeholder = player ? "전선 상황을 입력하세요" : "입장 후 채팅 가능";
+  }
+
   function renderUpgrades() {
     const container = document.getElementById("upgrades");
     container.innerHTML = "";
@@ -958,6 +1258,7 @@
 
   function renderBoard() {
     const board = document.getElementById("board");
+    const boardWrap = document.querySelector(".board-wrap");
     board.innerHTML = "";
     const expansionCandidates = selectedMode === "expand" ? getExpansionCandidates() : [];
     const renderTiles = [...Object.values(tiles), ...expansionCandidates];
@@ -973,8 +1274,8 @@
     const minY = Math.min(...points.map((point) => point.y), 0);
     const maxY = Math.max(...points.map((point) => point.y), 0);
     const padding = 120;
-    const boardWidth = Math.max(maxX - minX + HEX_W + padding * 2, board.parentElement.clientWidth);
-    const boardHeight = Math.max(maxY - minY + HEX_H + padding * 2, board.parentElement.clientHeight);
+    const boardWidth = Math.max(maxX - minX + HEX_W + padding * 2, boardWrap.clientWidth + 320);
+    const boardHeight = Math.max(maxY - minY + HEX_H + padding * 2, boardWrap.clientHeight + 320);
 
     board.style.width = `${boardWidth}px`;
     board.style.height = `${boardHeight}px`;
@@ -1025,11 +1326,20 @@
       button.onclick = () => handleTileClick(tile);
       board.appendChild(button);
     });
+
+    initBoardViewport();
+
+    if (!player || !board.dataset.centered) {
+      centerBoardViewport();
+      board.dataset.centered = "true";
+    }
   }
 
   function renderAll() {
     renderInfo();
     renderFeed();
+    renderChat();
+    renderAchievements();
     renderRanking();
     renderTopPlayers();
     renderModes();
@@ -1038,6 +1348,10 @@
   }
 
   function handleTileClick(tile) {
+    if (Date.now() < boardJustDraggedUntil) {
+      return;
+    }
+
     if (!player) {
       setBanner("먼저 입장해야 합니다.", "error");
       return;
@@ -1113,6 +1427,25 @@
     socket.emit("buyBomb");
   };
 
+  document.getElementById("chatForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    const input = document.getElementById("chatInput");
+    const text = input.value.trim();
+
+    if (!text) {
+      return;
+    }
+
+    socket.emit("chatMessage", text);
+    input.value = "";
+  });
+
   socket.on("connect", () => {
     renderConnection(true);
     setBanner("서버와 연결되었습니다.", "success");
@@ -1132,7 +1465,12 @@
 
   socket.on("gameState", (state) => {
     tiles = state.tiles || {};
-    meta = state.meta || meta;
+    meta = {
+      ...meta,
+      ...(state.meta || {}),
+      chatHistory: Array.isArray(state?.meta?.chatHistory) ? state.meta.chatHistory : meta.chatHistory,
+      achievementDefs: Array.isArray(state?.meta?.achievementDefs) ? state.meta.achievementDefs : meta.achievementDefs
+    };
     renderAll();
   });
 
@@ -1165,6 +1503,27 @@
   socket.on("actionRejected", (message) => {
     setBanner(message, "error");
     pushFeed(message);
+  });
+
+  socket.on("chatMessage", (message) => {
+    meta.chatHistory = [...(Array.isArray(meta.chatHistory) ? meta.chatHistory : []), message].slice(-40);
+    renderChat();
+  });
+
+  socket.on("achievementUnlocked", (achievement) => {
+    if (!achievement) {
+      return;
+    }
+
+    if (player) {
+      const current = new Set(Array.isArray(player.achievements) ? player.achievements : []);
+      current.add(achievement.id);
+      player.achievements = Array.from(current);
+    }
+
+    setBanner(`업적 달성: ${achievement.title}`, "success");
+    pushFeed(`업적 달성 · ${achievement.title}`);
+    renderAchievements();
   });
 
   updateJoinHint();
