@@ -30,6 +30,7 @@ const MAX_TILE_STRENGTH = Number(process.env.MAX_TILE_STRENGTH || 60);
 const FORTIFY_RATIO = Number(process.env.FORTIFY_RATIO || 0.6);
 const ACTION_GOLD_REWARD = Number(process.env.ACTION_GOLD_REWARD || 1);
 const CAPTURE_BONUS_GOLD = Number(process.env.CAPTURE_BONUS_GOLD || 8);
+const BOMB_COST = Number(process.env.BOMB_COST || 55);
 
 const UPGRADE_CONFIG = {
   click: {
@@ -125,6 +126,7 @@ function buildFreshTiles() {
         q,
         r,
         owner: null,
+        active: true,
         strength: NEUTRAL_TILE_STRENGTH,
         base: false
       };
@@ -160,16 +162,21 @@ function sanitizeTiles(rawTiles) {
 
     const isBase = freshTile.base;
     const owner = typeof rawTile.owner === "string" && TEAM_LABELS[rawTile.owner] ? rawTile.owner : null;
+    const active = rawTile.active !== false;
     const strength = Number(rawTile.strength);
 
     if (isBase) {
       freshTile.owner = freshTile.owner;
+      freshTile.active = true;
       freshTile.strength = Math.max(BASE_TILE_STRENGTH, Number.isFinite(strength) ? Math.round(strength) : BASE_TILE_STRENGTH);
       return;
     }
 
+    freshTile.active = active;
     freshTile.owner = owner;
-    freshTile.strength = clampStrength(Number.isFinite(strength) ? Math.round(strength) : NEUTRAL_TILE_STRENGTH);
+    freshTile.strength = active
+      ? clampStrength(Number.isFinite(strength) ? Math.round(strength) : NEUTRAL_TILE_STRENGTH)
+      : 0;
   });
 
   return freshTiles;
@@ -184,7 +191,7 @@ function neighbors(tile) {
 }
 
 function hasAdjacentTeam(tile, team) {
-  return neighbors(tile).some((neighbor) => neighbor.owner === team);
+  return neighbors(tile).some((neighbor) => neighbor.active && neighbor.owner === team);
 }
 
 function getTeamFromStudentId(studentId) {
@@ -242,6 +249,7 @@ function buildNewProfile(studentId, team) {
     studentId,
     team,
     gold: STARTING_GOLD,
+    bombCount: 0,
     clickLevel: 0,
     autoLevel: 0,
     boostLevel: 0,
@@ -275,6 +283,7 @@ function normalizeProfile(studentId, rawProfile) {
     studentId: normalizedId,
     team,
     gold: Number(rawProfile.gold ?? base.gold),
+    bombCount: Number(rawProfile.bombCount ?? base.bombCount),
     clickLevel: Number(rawProfile.clickLevel ?? base.clickLevel),
     autoLevel: Number(rawProfile.autoLevel ?? base.autoLevel),
     boostLevel: Number(rawProfile.boostLevel ?? base.boostLevel),
@@ -307,7 +316,7 @@ function recomputeBoardStats() {
   const nextStrengthTotals = createEmptyTeamMap(0);
 
   Object.values(tiles).forEach((tile) => {
-    if (!tile.owner) {
+    if (!tile.active || !tile.owner) {
       return;
     }
 
@@ -410,6 +419,7 @@ function getPublicMeta() {
     onlinePlayers: Object.keys(sessions).length,
     passiveTickMs: PASSIVE_TICK_MS,
     mapRadius: MAP_RADIUS,
+    bombCost: BOMB_COST,
     teamTileCounts,
     teamStrengthTotals,
     teamPlayerCounts: getOnlineCounts(),
@@ -431,6 +441,7 @@ function getPlayerState(profile) {
     studentId: profile.studentId,
     maskedStudentId: maskStudentId(profile.studentId),
     gold: profile.gold,
+    bombCount: profile.bombCount,
     clickLevel: profile.clickLevel,
     autoLevel: profile.autoLevel,
     boostLevel: profile.boostLevel,
@@ -602,6 +613,10 @@ function rewardAction(profile, amount) {
 }
 
 function fortifyTile(profile, tile) {
+  if (!tile.active) {
+    return { ok: false, reason: "비활성화된 칸은 강화할 수 없습니다." };
+  }
+
   const fortifyAmount = Math.max(2, Math.round(getAttackPower(profile) * FORTIFY_RATIO));
 
   if (tile.strength >= MAX_TILE_STRENGTH) {
@@ -621,6 +636,10 @@ function fortifyTile(profile, tile) {
 }
 
 function attackTile(profile, tile) {
+  if (!tile.active) {
+    return { ok: false, reason: "비활성화된 칸은 공격할 수 없습니다." };
+  }
+
   if (tile.base && tile.owner && tile.owner !== profile.team) {
     return { ok: false, reason: "적 본진은 직접 점령할 수 없습니다." };
   }
@@ -656,7 +675,39 @@ function attackTile(profile, tile) {
   };
 }
 
-function handleTileClick(socket, { q, r }) {
+function bombTile(profile, tile) {
+  if (!tile.active) {
+    return { ok: false, reason: "이미 비활성화된 칸입니다." };
+  }
+
+  if (tile.base) {
+    return { ok: false, reason: "본진에는 폭탄을 사용할 수 없습니다." };
+  }
+
+  if (profile.bombCount <= 0) {
+    return { ok: false, reason: "보유한 폭탄이 없습니다." };
+  }
+
+  if (!tile.owner && !hasAdjacentTeam(tile, profile.team)) {
+    return { ok: false, reason: "중립 칸은 우리 땅과 맞닿아 있을 때만 폭탄을 사용할 수 있습니다." };
+  }
+
+  profile.bombCount -= 1;
+  profile.totalActions += 1;
+  profile.warPoints += Math.max(8, tile.strength);
+  touchProfile(profile);
+
+  tile.active = false;
+  tile.owner = null;
+  tile.strength = 0;
+
+  return {
+    ok: true,
+    notice: "폭탄 투하 성공, 타일이 비활성화되었습니다."
+  };
+}
+
+function handleTileClick(socket, { q, r, mode }) {
   const session = getSession(socket.id);
   const profile = getProfileBySocket(socket.id);
 
@@ -676,9 +727,10 @@ function handleTileClick(socket, { q, r }) {
     return;
   }
 
-  const result = tile.owner === profile.team
-    ? fortifyTile(profile, tile)
-    : attackTile(profile, tile);
+  const actionMode = mode === "bomb" ? "bomb" : "battle";
+  const result = actionMode === "bomb"
+    ? bombTile(profile, tile)
+    : (tile.owner === profile.team ? fortifyTile(profile, tile) : attackTile(profile, tile));
 
   if (!result.ok) {
     reject(socket, result.reason);
@@ -689,6 +741,28 @@ function handleTileClick(socket, { q, r }) {
   socket.emit("notice", result.notice);
   emitPlayerState(socket);
   queueBroadcast();
+  queueSave();
+}
+
+function handleBuyBomb(socket) {
+  const profile = getProfileBySocket(socket.id);
+
+  if (!profile) {
+    reject(socket, "먼저 입장해야 합니다.");
+    return;
+  }
+
+  if (profile.gold < BOMB_COST) {
+    reject(socket, "폭탄을 사기 위한 골드가 부족합니다.");
+    return;
+  }
+
+  profile.gold -= BOMB_COST;
+  profile.bombCount += 1;
+  touchProfile(profile);
+
+  socket.emit("notice", "폭탄 1개를 확보했습니다.");
+  emitPlayerState(socket);
   queueSave();
 }
 
@@ -727,6 +801,7 @@ app.get("/api/health", (req, res) => {
     ok: true,
     onlinePlayers: Object.keys(sessions).length,
     storage: storage.mode,
+    bombCost: BOMB_COST,
     teamTileCounts,
     teamStrengthTotals
   });
@@ -739,12 +814,16 @@ io.on("connection", (socket) => {
     joinPlayer(socket, studentId);
   });
 
-  socket.on("tileClick", ({ q, r }) => {
-    handleTileClick(socket, { q, r });
+  socket.on("tileClick", ({ q, r, mode }) => {
+    handleTileClick(socket, { q, r, mode });
   });
 
   socket.on("buyUpgrade", ({ type }) => {
     handleUpgrade(socket, type);
+  });
+
+  socket.on("buyBomb", () => {
+    handleBuyBomb(socket);
   });
 
   socket.on("disconnect", () => {

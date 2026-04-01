@@ -245,7 +245,8 @@
 
   .list,
   .feed,
-  .upgrade-list {
+  .upgrade-list,
+  .mode-switch {
     display: grid;
     gap: 10px;
   }
@@ -305,6 +306,18 @@
     color: var(--text);
     background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(255, 198, 93, 0.16));
     border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .mode-btn {
+    padding: 12px 14px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .mode-btn.active {
+    background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(255, 198, 93, 0.16));
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .board-card {
@@ -393,6 +406,12 @@
 
   .hex.base {
     box-shadow: inset 0 0 0 2px rgba(255, 238, 175, 0.9), 0 0 18px rgba(255, 214, 102, 0.24);
+  }
+
+  .hex.dead {
+    background: #111827 !important;
+    border-color: rgba(255, 255, 255, 0.04);
+    opacity: 0.38;
   }
 
   .hex.candidate {
@@ -515,6 +534,10 @@
             <div class="stat-label">점령 성공</div>
             <div id="captures" class="stat-value">0</div>
           </div>
+          <div class="stat">
+            <div class="stat-label">폭탄 보유</div>
+            <div id="bombCount" class="stat-value">0</div>
+          </div>
         </div>
         <div id="incomeText" class="helper">보급 드론 수익 정보를 불러오는 중...</div>
       </section>
@@ -544,6 +567,16 @@
     </main>
 
     <aside class="stack">
+      <section class="card section">
+        <h2>전술</h2>
+        <div class="mode-switch">
+          <button id="battleModeBtn" class="mode-btn" type="button">전투 모드</button>
+          <button id="bombModeBtn" class="mode-btn" type="button">폭탄 모드</button>
+          <button id="buyBombBtn" class="mode-btn" type="button">폭탄 구매</button>
+        </div>
+        <div id="modeHelp" class="helper">전투 모드에서는 공격/강화, 폭탄 모드에서는 타일 비활성화를 시도합니다.</div>
+      </section>
+
       <section class="card section">
         <h2>업그레이드</h2>
         <div id="upgrades" class="upgrade-list"></div>
@@ -608,12 +641,14 @@
     onlinePlayers: 0,
     passiveTickMs: 1000,
     mapRadius: 7,
+    bombCost: 55,
     teamTileCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamStrengthTotals: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     topPlayers: []
   };
   let player = null;
+  let selectedMode = "battle";
   let lastStudentId = "";
   let hasJoinedOnce = false;
   let feedItems = ["서버 상태를 기다리는 중입니다."];
@@ -692,14 +727,19 @@
     document.getElementById("autoIncome").textContent = formatNumber(player ? player.autoIncome : 0);
     document.getElementById("territoryCount").textContent = formatNumber(player ? player.teamTerritoryCount : 0);
     document.getElementById("captures").textContent = formatNumber(player ? player.totalCaptures : 0);
+    document.getElementById("bombCount").textContent = formatNumber(player ? player.bombCount : 0);
 
     if (meta.passiveTickMs) {
       document.getElementById("incomeText").textContent =
         `${meta.passiveTickMs / 1000}초마다 보급 드론 수치만큼 골드가 들어옵니다. 현재 접속 ${meta.onlinePlayers}명`;
     }
 
+    document.getElementById("modeHelp").textContent = selectedMode === "bomb"
+      ? `폭탄 모드: 비본진 타일을 아예 비활성화합니다. 현재 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`
+      : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`;
+
     document.getElementById("boardHint").textContent = player
-      ? `${player.teamLabel} ${player.maskedStudentId}. 아군 타일 클릭은 방어력 강화, 인접 적/중립 타일 클릭은 공격입니다.`
+      ? `${player.teamLabel} ${player.maskedStudentId}. ${selectedMode === "bomb" ? "폭탄 모드에서 클릭하면 타일을 비활성화합니다." : "아군 타일 클릭은 방어력 강화, 인접 적/중립 타일 클릭은 공격입니다."}`
       : "입장 후 우리 영토에 붙은 타일을 클릭하면 공격, 우리 타일을 누르면 방어력 강화입니다.";
   }
 
@@ -799,9 +839,39 @@
     });
   }
 
+  function renderModes() {
+    document.getElementById("battleModeBtn").classList.toggle("active", selectedMode === "battle");
+    document.getElementById("bombModeBtn").classList.toggle("active", selectedMode === "bomb");
+    document.getElementById("buyBombBtn").textContent = player
+      ? `${formatNumber(meta.bombCost)} 골드로 폭탄 구매`
+      : "입장 후 폭탄 구매";
+    document.getElementById("buyBombBtn").disabled = !player || player.gold < meta.bombCost;
+    document.getElementById("bombModeBtn").disabled = !player || player.bombCount <= 0;
+  }
+
   function isCandidate(tile) {
     if (!player) {
       return false;
+    }
+
+    if (!tile.active) {
+      return false;
+    }
+
+    if (selectedMode === "bomb") {
+      if (player.bombCount <= 0) {
+        return false;
+      }
+
+      if (tile.base) {
+        return false;
+      }
+
+      if (!tile.owner) {
+        return hasAdjacentMine(tile);
+      }
+
+      return true;
     }
 
     if (tile.owner === player.team) {
@@ -827,7 +897,9 @@
       button.type = "button";
       button.className = "hex";
 
-      if (tile.owner) {
+      if (!tile.active) {
+        button.classList.add("dead");
+      } else if (tile.owner) {
         button.style.background = colors[tile.owner];
       }
 
@@ -851,11 +923,11 @@
       button.style.left = `${x}px`;
       button.style.top = `${y}px`;
 
-      const label = tile.base ? "BASE" : (tile.owner ? teamNames[tile.owner] : "중립");
+      const label = !tile.active ? "폐허" : (tile.base ? "BASE" : (tile.owner ? teamNames[tile.owner] : "중립"));
       button.innerHTML = `
         <div class="hex-inner">
           <div>
-            <div class="hex-strength">${formatNumber(tile.strength)}</div>
+            <div class="hex-strength">${tile.active ? formatNumber(tile.strength) : "X"}</div>
             <div class="hex-badge">${label}</div>
           </div>
         </div>
@@ -872,6 +944,7 @@
     renderFeed();
     renderRanking();
     renderTopPlayers();
+    renderModes();
     renderUpgrades();
     renderBoard();
   }
@@ -884,7 +957,8 @@
 
     socket.emit("tileClick", {
       q: tile.q,
-      r: tile.r
+      r: tile.r,
+      mode: selectedMode
     });
   }
 
@@ -906,6 +980,30 @@
       document.getElementById("startBtn").click();
     }
   });
+
+  document.getElementById("battleModeBtn").onclick = () => {
+    selectedMode = "battle";
+    renderAll();
+  };
+
+  document.getElementById("bombModeBtn").onclick = () => {
+    if (!player || player.bombCount <= 0) {
+      setBanner("폭탄이 있어야 폭탄 모드를 사용할 수 있습니다.", "error");
+      return;
+    }
+
+    selectedMode = "bomb";
+    renderAll();
+  };
+
+  document.getElementById("buyBombBtn").onclick = () => {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    socket.emit("buyBomb");
+  };
 
   socket.on("connect", () => {
     renderConnection(true);
@@ -933,6 +1031,10 @@
   socket.on("playerState", (nextPlayer) => {
     const wasJoined = Boolean(player);
     player = nextPlayer;
+
+    if (selectedMode === "bomb" && player.bombCount <= 0) {
+      selectedMode = "battle";
+    }
 
     if (!wasJoined) {
       hasJoinedOnce = true;

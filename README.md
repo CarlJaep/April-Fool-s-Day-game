@@ -15,6 +15,7 @@ npm start
 
 - 우리 영토와 맞닿은 중립/적 타일을 클릭하면 공격합니다.
 - 우리 타일을 클릭하면 방어력을 올립니다.
+- 폭탄 아이템을 구매하면 비본진 타일을 폐허로 만들어 아예 비활성화할 수 있습니다.
 - 업그레이드로 공격력과 자동 골드를 강화할 수 있습니다.
 - 팀 순위는 점령 칸 수와 총 방어력으로 계산됩니다.
 
@@ -39,6 +40,7 @@ npm start
 - `NEUTRAL_TILE_STRENGTH`: 중립 타일 기본 방어력
 - `CAPTURED_TILE_STRENGTH`: 점령 직후 타일 방어력
 - `MAX_TILE_STRENGTH`: 타일 최대 방어력
+- `BOMB_COST`: 폭탄 1개 구매 가격
 - `MAX_CLICKS_PER_WINDOW`: 클릭 제한 횟수
 - `CLICK_WINDOW_MS`: 클릭 제한 측정 구간
 - `CLICK_RATE_LIMIT_COOLDOWN_MS`: 제한 후 대기 시간
