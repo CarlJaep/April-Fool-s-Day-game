@@ -1,6 +1,6 @@
-# Hex Reactor IO
+# Hex Siege IO
 
-실시간 팀 클리커 게임입니다. 서버가 클릭, 업그레이드, 자동 수입, 세션, 저장을 직접 관리합니다.
+실시간 팀 땅따먹기 게임입니다. 보드 타일 클릭이 핵심이고, 서버가 공격 판정, 점령, 방어력, 업그레이드, 세션, 저장을 직접 관리합니다.
 
 ## 로컬 실행
 
@@ -10,6 +10,13 @@ npm start
 ```
 
 브라우저에서 `http://localhost:3000` 으로 접속합니다.
+
+## 게임 규칙
+
+- 우리 영토와 맞닿은 중립/적 타일을 클릭하면 공격합니다.
+- 우리 타일을 클릭하면 방어력을 올립니다.
+- 업그레이드로 공격력과 자동 골드를 강화할 수 있습니다.
+- 팀 순위는 점령 칸 수와 총 방어력으로 계산됩니다.
 
 ## 운영형 기능
 
@@ -24,9 +31,14 @@ npm start
 
 - `PORT`: 서버 포트
 - `ALLOWED_ORIGINS`: 허용 도메인 목록, 쉼표로 구분
+- `MAP_RADIUS`: 육각 맵 반경
 - `REDIS_URL`: Redis 연결 문자열
 - `REDIS_KEY`: Redis 저장 키
 - `STATE_FILE`: 파일 저장 경로
+- `BASE_TILE_STRENGTH`: 본진 타일 기본 방어력
+- `NEUTRAL_TILE_STRENGTH`: 중립 타일 기본 방어력
+- `CAPTURED_TILE_STRENGTH`: 점령 직후 타일 방어력
+- `MAX_TILE_STRENGTH`: 타일 최대 방어력
 - `MAX_CLICKS_PER_WINDOW`: 클릭 제한 횟수
 - `CLICK_WINDOW_MS`: 클릭 제한 측정 구간
 - `CLICK_RATE_LIMIT_COOLDOWN_MS`: 제한 후 대기 시간

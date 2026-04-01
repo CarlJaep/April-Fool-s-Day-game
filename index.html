@@ -3,23 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hex Reactor IO</title>
+<title>Hex Siege IO</title>
 <style>
   :root {
-    --bg-top: #081326;
-    --bg-bottom: #12284b;
-    --panel: rgba(8, 18, 36, 0.78);
-    --panel-strong: rgba(12, 24, 48, 0.92);
+    --bg-top: #071221;
+    --bg-bottom: #10264b;
+    --panel: rgba(9, 20, 39, 0.82);
     --line: rgba(255, 255, 255, 0.11);
-    --text: #ebf4ff;
-    --muted: #9fb4d9;
+    --text: #edf4ff;
+    --muted: #9cb4db;
     --blue: #58a9ff;
-    --red: #ff6a7c;
-    --green: #4be194;
-    --yellow: #ffc85e;
+    --red: #ff6878;
+    --green: #4fe09b;
+    --yellow: #ffc65d;
     --good: #4ade80;
     --warn: #fbbf24;
     --bad: #fb7185;
+    --neutral: #7e8797;
   }
 
   * {
@@ -32,10 +32,9 @@
     color: var(--text);
     font-family: "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", sans-serif;
     background:
-      radial-gradient(circle at top, rgba(77, 169, 255, 0.18), transparent 28%),
-      radial-gradient(circle at 85% 15%, rgba(255, 200, 94, 0.14), transparent 22%),
+      radial-gradient(circle at top, rgba(88, 169, 255, 0.18), transparent 28%),
+      radial-gradient(circle at right top, rgba(255, 198, 93, 0.12), transparent 20%),
       linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
-    overflow-x: hidden;
   }
 
   body::before {
@@ -47,20 +46,20 @@
       linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
     background-size: 28px 28px;
-    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.74), transparent);
   }
 
   .shell {
-    width: min(1440px, calc(100% - 28px));
+    width: min(1500px, calc(100% - 24px));
     margin: 0 auto;
-    padding: 28px 0 32px;
+    padding: 24px 0 30px;
   }
 
   .hero {
     display: flex;
     justify-content: space-between;
-    gap: 20px;
     align-items: flex-start;
+    gap: 20px;
     margin-bottom: 18px;
   }
 
@@ -71,8 +70,8 @@
   }
 
   .hero p {
-    margin: 12px 0 0;
-    max-width: 760px;
+    margin: 10px 0 0;
+    max-width: 780px;
     color: var(--muted);
     line-height: 1.6;
   }
@@ -95,17 +94,23 @@
     height: 10px;
     border-radius: 50%;
     background: var(--warn);
-    box-shadow: 0 0 14px rgba(251, 191, 36, 0.55);
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.5);
   }
 
   .conn-pill.connected::before {
     background: var(--good);
-    box-shadow: 0 0 14px rgba(74, 222, 128, 0.55);
+    box-shadow: 0 0 14px rgba(74, 222, 128, 0.5);
   }
 
   .layout {
     display: grid;
-    grid-template-columns: 330px minmax(0, 1fr) 330px;
+    grid-template-columns: 320px minmax(0, 1fr) 320px;
+    gap: 18px;
+  }
+
+  .stack {
+    display: flex;
+    flex-direction: column;
     gap: 18px;
   }
 
@@ -113,14 +118,8 @@
     background: var(--panel);
     border: 1px solid var(--line);
     border-radius: 26px;
-    box-shadow: 0 24px 80px rgba(2, 9, 21, 0.36);
+    box-shadow: 0 26px 84px rgba(2, 10, 22, 0.36);
     backdrop-filter: blur(16px);
-  }
-
-  .stack {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
   }
 
   .section {
@@ -156,16 +155,16 @@
   }
 
   input:focus {
-    outline-color: rgba(88, 169, 255, 0.65);
+    outline-color: rgba(88, 169, 255, 0.6);
   }
 
   input::placeholder {
-    color: rgba(235, 244, 255, 0.45);
+    color: rgba(237, 244, 255, 0.45);
   }
 
   button {
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+    transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
   }
 
   button:hover {
@@ -173,18 +172,18 @@
   }
 
   button:disabled {
-    opacity: 0.45;
+    opacity: 0.46;
     cursor: not-allowed;
     transform: none;
   }
 
   .primary-btn {
-    min-width: 96px;
+    min-width: 92px;
     padding: 14px 16px;
     font-weight: 700;
-    color: #07101f;
-    background: linear-gradient(135deg, #72d3ff, #ffd971);
-    box-shadow: 0 14px 30px rgba(100, 188, 255, 0.24);
+    color: #07101d;
+    background: linear-gradient(135deg, #72d4ff, #ffd972);
+    box-shadow: 0 14px 30px rgba(106, 193, 255, 0.24);
   }
 
   .helper {
@@ -198,9 +197,9 @@
     margin-top: 14px;
     padding: 12px 14px;
     border-radius: 16px;
+    border: 1px solid transparent;
     font-size: 14px;
     line-height: 1.5;
-    border: 1px solid transparent;
     background: rgba(255, 255, 255, 0.05);
   }
 
@@ -244,18 +243,25 @@
     font-weight: 700;
   }
 
-  .list {
+  .list,
+  .feed,
+  .upgrade-list {
     display: grid;
     gap: 10px;
+  }
+
+  .list-item,
+  .feed-item,
+  .upgrade {
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .list-item {
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    padding: 12px 14px;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.05);
   }
 
   .muted {
@@ -279,178 +285,6 @@
     box-shadow: 0 0 14px currentColor;
   }
 
-  .arena {
-    position: relative;
-    padding: 22px;
-    overflow: hidden;
-    background:
-      radial-gradient(circle at center, rgba(88, 169, 255, 0.12), transparent 38%),
-      radial-gradient(circle at center, rgba(255, 200, 94, 0.08), transparent 52%);
-  }
-
-  .arena::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-    background-size: 24px 24px;
-    opacity: 0.35;
-    pointer-events: none;
-  }
-
-  .arena-top {
-    position: relative;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    margin-bottom: 20px;
-    z-index: 1;
-  }
-
-  .arena-top p {
-    margin: 6px 0 0;
-    color: var(--muted);
-  }
-
-  .arena-score {
-    text-align: right;
-  }
-
-  .arena-score strong {
-    display: block;
-    font-size: 13px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-
-  .arena-score span {
-    display: block;
-    margin-top: 6px;
-    font-size: 34px;
-    font-weight: 800;
-  }
-
-  .reactor-shell {
-    position: relative;
-    min-height: 540px;
-    display: grid;
-    place-items: center;
-    z-index: 1;
-  }
-
-  .reactor-rings {
-    position: absolute;
-    width: min(70vw, 560px);
-    height: min(70vw, 560px);
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow:
-      0 0 0 48px rgba(255, 255, 255, 0.02),
-      0 0 0 98px rgba(255, 255, 255, 0.02);
-    opacity: 0.85;
-  }
-
-  .reactor {
-    position: relative;
-    width: min(44vw, 320px);
-    height: min(44vw, 320px);
-    min-width: 220px;
-    min-height: 220px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    color: var(--text);
-    background:
-      radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), transparent 24%),
-      radial-gradient(circle at center, rgba(255, 255, 255, 0.22), rgba(44, 109, 255, 0.18) 40%, rgba(7, 17, 36, 0.96) 68%);
-    box-shadow:
-      inset 0 0 55px rgba(118, 211, 255, 0.18),
-      0 0 42px rgba(88, 169, 255, 0.22),
-      0 32px 80px rgba(4, 11, 24, 0.4);
-  }
-
-  .reactor:active {
-    transform: scale(0.98);
-  }
-
-  .reactor-inner {
-    display: grid;
-    place-items: center;
-    width: 100%;
-    height: 100%;
-    text-align: center;
-    padding: 22px;
-  }
-
-  .reactor-label {
-    color: var(--muted);
-    font-size: 13px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-
-  .reactor-value {
-    margin-top: 10px;
-    font-size: clamp(42px, 6vw, 64px);
-    font-weight: 800;
-    letter-spacing: 0.04em;
-  }
-
-  .reactor-sub {
-    margin-top: 10px;
-    color: #d7e6ff;
-    line-height: 1.5;
-  }
-
-  .float-layer {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-  }
-
-  .float-pop {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    --offset-x: 0px;
-    --offset-y: 0px;
-    font-size: 24px;
-    font-weight: 800;
-    color: #fff0ae;
-    text-shadow: 0 0 18px rgba(255, 216, 94, 0.8);
-    animation: rise 0.9s ease forwards;
-    white-space: nowrap;
-  }
-
-  @keyframes rise {
-    0% {
-      opacity: 0;
-      transform: translate(calc(-50% + var(--offset-x)), calc(-12px + var(--offset-y))) scale(0.7);
-    }
-    15% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(calc(-50% + var(--offset-x)), calc(-96px + var(--offset-y))) scale(1.08);
-    }
-  }
-
-  .upgrade-list {
-    display: grid;
-    gap: 10px;
-  }
-
-  .upgrade {
-    padding: 14px;
-    border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.05);
-  }
-
   .upgrade-head {
     display: flex;
     justify-content: space-between;
@@ -469,38 +303,143 @@
     width: 100%;
     padding: 12px 14px;
     color: var(--text);
-    background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(255, 200, 94, 0.16));
+    background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(255, 198, 93, 0.16));
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  .feed {
+  .board-card {
+    position: relative;
+    padding: 20px;
+    overflow: hidden;
+  }
+
+  .board-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at center, rgba(88, 169, 255, 0.08), transparent 38%),
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: auto, 24px 24px, 24px 24px;
+    opacity: 0.42;
+    pointer-events: none;
+  }
+
+  .board-top {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    z-index: 1;
+  }
+
+  .board-top p {
+    margin: 6px 0 0;
+    color: var(--muted);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .legend-pill {
+    padding: 10px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .board-wrap {
+    position: relative;
+    min-height: 760px;
+    border-radius: 28px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    background:
+      radial-gradient(circle at center, rgba(255, 255, 255, 0.05), transparent 56%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
+  }
+
+  #board {
+    position: relative;
+    width: 100%;
+    height: 760px;
+  }
+
+  .hex {
+    position: absolute;
+    width: 50px;
+    height: 44px;
+    padding: 0;
+    background: var(--neutral);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    color: white;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+
+  .hex:hover {
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  .hex.mine {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.88), 0 0 14px rgba(255, 255, 255, 0.18);
+  }
+
+  .hex.base {
+    box-shadow: inset 0 0 0 2px rgba(255, 238, 175, 0.9), 0 0 18px rgba(255, 214, 102, 0.24);
+  }
+
+  .hex.candidate {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.8), 0 0 18px rgba(127, 214, 255, 0.42);
+  }
+
+  .hex.disabled {
+    cursor: default;
+    filter: saturate(0.65);
+    opacity: 0.78;
+  }
+
+  .hex-inner {
+    width: 100%;
+    height: 100%;
     display: grid;
-    gap: 8px;
-    max-height: 220px;
+    place-items: center;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.05;
+  }
+
+  .hex-strength {
+    font-size: 12px;
+    text-shadow: 0 0 10px rgba(0, 0, 0, 0.35);
+  }
+
+  .hex-badge {
+    font-size: 10px;
+    opacity: 0.82;
+  }
+
+  .feed {
+    max-height: 260px;
     overflow: auto;
   }
 
-  .feed-item {
-    padding: 10px 12px;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.04);
-    line-height: 1.45;
-    font-size: 13px;
-  }
-
-  @media (max-width: 1240px) {
+  @media (max-width: 1260px) {
     .layout {
       grid-template-columns: 1fr;
     }
-
-    .reactor-shell {
-      min-height: 460px;
-    }
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .shell {
-      width: min(100% - 18px, 1440px);
+      width: min(100% - 16px, 1500px);
       padding-top: 18px;
     }
 
@@ -517,17 +456,12 @@
       grid-template-columns: 1fr;
     }
 
-    .arena {
-      padding: 16px;
+    .board-wrap {
+      min-height: 620px;
     }
 
-    .arena-top {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .arena-score {
-      text-align: left;
+    #board {
+      height: 620px;
     }
   }
 </style>
@@ -536,8 +470,8 @@
 <div class="shell">
   <header class="hero">
     <div>
-      <h1>Hex Reactor IO</h1>
-      <p>반별로 같은 리액터를 두드려 점수를 올리는 실시간 팀 클리커입니다. 클릭과 업그레이드 계산은 서버가 처리하고, 자동 드론과 오버드라이브가 팀 점수를 계속 밀어 올립니다.</p>
+      <h1>Hex Siege IO</h1>
+      <p>이제 핵심은 보드입니다. 우리 땅과 맞닿은 타일을 계속 클릭해 적 영토를 깎아 먹고, 내 타일을 눌러 방어력을 올리며 전선을 밀어붙이세요.</p>
     </div>
     <div id="connPill" class="conn-pill">연결 중...</div>
   </header>
@@ -551,7 +485,7 @@
           <button id="startBtn" class="primary-btn">입장</button>
         </div>
         <div id="joinHint" class="helper">학번 두 번째 자리 숫자로 반이 정해집니다.</div>
-        <div id="banner" class="banner info">연결되면 학번을 넣고 클릭러로 입장하세요.</div>
+        <div id="banner" class="banner info">입장 후 보드 타일을 직접 클릭해 영토를 넓히세요.</div>
       </section>
 
       <section class="card section">
@@ -562,27 +496,27 @@
             <div id="myTeam" class="stat-value">-</div>
           </div>
           <div class="stat">
-            <div class="stat-label">보유 골드</div>
+            <div class="stat-label">골드</div>
             <div id="gold" class="stat-value">0</div>
           </div>
           <div class="stat">
-            <div class="stat-label">클릭 수치</div>
-            <div id="clickValue" class="stat-value">0</div>
+            <div class="stat-label">공격력</div>
+            <div id="attackPower" class="stat-value">0</div>
           </div>
           <div class="stat">
-            <div class="stat-label">초당 수입</div>
-            <div id="autoValue" class="stat-value">0</div>
+            <div class="stat-label">초당 골드</div>
+            <div id="autoIncome" class="stat-value">0</div>
           </div>
           <div class="stat">
-            <div class="stat-label">총 클릭 수</div>
-            <div id="totalClicks" class="stat-value">0</div>
+            <div class="stat-label">우리 영토</div>
+            <div id="territoryCount" class="stat-value">0</div>
           </div>
           <div class="stat">
-            <div class="stat-label">총 기여 점수</div>
-            <div id="totalContributed" class="stat-value">0</div>
+            <div class="stat-label">점령 성공</div>
+            <div id="captures" class="stat-value">0</div>
           </div>
         </div>
-        <div id="incomeText" class="helper">자동 수입 정보를 기다리는 중...</div>
+        <div id="incomeText" class="helper">보급 드론 수익 정보를 불러오는 중...</div>
       </section>
 
       <section class="card section">
@@ -591,30 +525,21 @@
       </section>
     </aside>
 
-    <main class="card arena">
-      <div class="arena-top">
+    <main class="card board-card">
+      <div class="board-top">
         <div>
-          <h2 style="margin:0;">리액터</h2>
-          <p id="reactorHint">입장 후 중앙 코어를 클릭해 팀 점수를 올리세요.</p>
+          <h2 style="margin:0;">전장</h2>
+          <p id="boardHint">입장 후 우리 영토에 붙은 타일을 클릭하면 공격, 우리 타일을 누르면 방어력 강화입니다.</p>
         </div>
-        <div class="arena-score">
-          <strong>내 팀 점수</strong>
-          <span id="teamScore">0</span>
+        <div class="legend">
+          <div class="legend-pill"><span class="team-chip" style="color: var(--blue);">1반</span></div>
+          <div class="legend-pill"><span class="team-chip" style="color: var(--red);">2반</span></div>
+          <div class="legend-pill"><span class="team-chip" style="color: var(--green);">3반</span></div>
+          <div class="legend-pill"><span class="team-chip" style="color: var(--yellow);">4반</span></div>
         </div>
       </div>
-
-      <div class="reactor-shell">
-        <div class="reactor-rings"></div>
-        <button id="reactorBtn" class="reactor" type="button" disabled>
-          <div class="reactor-inner">
-            <div>
-              <div class="reactor-label">Tap The Core</div>
-              <div id="reactorValue" class="reactor-value">+0</div>
-              <div class="reactor-sub">클릭할 때마다 개인 골드와 팀 점수가 함께 오릅니다.</div>
-            </div>
-          </div>
-        </button>
-        <div id="floatLayer" class="float-layer"></div>
+      <div class="board-wrap">
+        <div id="board"></div>
       </div>
     </main>
 
@@ -630,7 +555,7 @@
       </section>
 
       <section class="card section">
-        <h2>상위 기여자</h2>
+        <h2>상위 사령관</h2>
         <div id="topPlayers" class="list"></div>
       </section>
     </aside>
@@ -643,11 +568,17 @@
     transports: ["websocket", "polling"]
   });
 
+  const HEX_W = 50;
+  const HEX_H = 44;
+  const H_STEP = HEX_W * 0.75;
+  const V_STEP = HEX_H;
+  const MAX_TILE_STRENGTH = 60;
+
   const colors = {
     blue: "#58a9ff",
-    red: "#ff6a7c",
-    green: "#4be194",
-    yellow: "#ffc85e"
+    red: "#ff6878",
+    green: "#4fe09b",
+    yellow: "#ffc65d"
   };
 
   const teamNames = {
@@ -659,34 +590,56 @@
 
   const upgrades = {
     click: {
-      title: "클릭 증폭기",
-      desc: "클릭 한 번당 획득하는 점수와 골드를 올립니다."
+      title: "공성 장갑",
+      desc: "타일 공격력과 방어력 보강량을 올립니다."
     },
     auto: {
-      title: "자동 드론",
-      desc: "매초 자동으로 점수와 골드를 생산합니다."
+      title: "보급 드론",
+      desc: "매초 골드를 생산해 업그레이드 속도를 끌어올립니다."
     },
     boost: {
-      title: "오버드라이브",
-      desc: "클릭 수치와 자동 수입에 배율을 추가합니다."
+      title: "지휘 증폭기",
+      desc: "공격력과 자동 골드 모두에 배율을 추가합니다."
     }
   };
 
+  let tiles = {};
   let meta = {
     onlinePlayers: 0,
     passiveTickMs: 1000,
-    teamScores: { blue: 0, red: 0, green: 0, yellow: 0 },
+    mapRadius: 7,
+    teamTileCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
+    teamStrengthTotals: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     topPlayers: []
   };
-
   let player = null;
   let lastStudentId = "";
   let hasJoinedOnce = false;
   let feedItems = ["서버 상태를 기다리는 중입니다."];
 
+  function key(q, r) {
+    return `${q},${r}`;
+  }
+
   function formatNumber(value) {
     return new Intl.NumberFormat("ko-KR").format(Math.floor(value || 0));
+  }
+
+  function neighbors(tile) {
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, -1], [-1, 1]];
+
+    return dirs
+      .map(([dq, dr]) => tiles[key(tile.q + dq, tile.r + dr)])
+      .filter(Boolean);
+  }
+
+  function hasAdjacentMine(tile) {
+    if (!player) {
+      return false;
+    }
+
+    return neighbors(tile).some((neighbor) => neighbor.owner === player.team);
   }
 
   function pushFeed(message) {
@@ -735,25 +688,19 @@
   function renderInfo() {
     document.getElementById("myTeam").textContent = player ? player.teamLabel : "-";
     document.getElementById("gold").textContent = formatNumber(player ? player.gold : 0);
-    document.getElementById("clickValue").textContent = formatNumber(player ? player.clickValue : 0);
-    document.getElementById("autoValue").textContent = formatNumber(player ? player.autoValue : 0);
-    document.getElementById("totalClicks").textContent = formatNumber(player ? player.totalClicks : 0);
-    document.getElementById("totalContributed").textContent = formatNumber(player ? player.totalContributed : 0);
-
-    const teamScore = player ? meta.teamScores[player.team] : 0;
-    document.getElementById("teamScore").textContent = formatNumber(teamScore);
-    document.getElementById("reactorValue").textContent = `+${formatNumber(player ? player.clickValue : 0)}`;
+    document.getElementById("attackPower").textContent = formatNumber(player ? player.attackPower : 0);
+    document.getElementById("autoIncome").textContent = formatNumber(player ? player.autoIncome : 0);
+    document.getElementById("territoryCount").textContent = formatNumber(player ? player.teamTerritoryCount : 0);
+    document.getElementById("captures").textContent = formatNumber(player ? player.totalCaptures : 0);
 
     if (meta.passiveTickMs) {
       document.getElementById("incomeText").textContent =
-        `${meta.passiveTickMs / 1000}초마다 자동 드론 수치만큼 골드와 팀 점수가 누적됩니다. 현재 접속 ${meta.onlinePlayers}명`;
+        `${meta.passiveTickMs / 1000}초마다 보급 드론 수치만큼 골드가 들어옵니다. 현재 접속 ${meta.onlinePlayers}명`;
     }
 
-    document.getElementById("reactorHint").textContent = player
-      ? `${player.teamLabel} 소속 ${player.maskedStudentId}. 클릭과 자동 수입이 팀 점수에 바로 반영됩니다.`
-      : "입장 후 중앙 코어를 클릭해 팀 점수를 올리세요.";
-
-    document.getElementById("reactorBtn").disabled = !player;
+    document.getElementById("boardHint").textContent = player
+      ? `${player.teamLabel} ${player.maskedStudentId}. 아군 타일 클릭은 방어력 강화, 인접 적/중립 타일 클릭은 공격입니다.`
+      : "입장 후 우리 영토에 붙은 타일을 클릭하면 공격, 우리 타일을 누르면 방어력 강화입니다.";
   }
 
   function renderFeed() {
@@ -772,17 +719,23 @@
     const ranking = document.getElementById("ranking");
     ranking.innerHTML = "";
 
-    Object.entries(meta.teamScores)
-      .sort((left, right) => right[1] - left[1])
-      .forEach(([team, score], index) => {
+    Object.keys(teamNames)
+      .sort((left, right) => {
+        const countDiff = meta.teamTileCounts[right] - meta.teamTileCounts[left];
+        if (countDiff !== 0) {
+          return countDiff;
+        }
+        return meta.teamStrengthTotals[right] - meta.teamStrengthTotals[left];
+      })
+      .forEach((team, index) => {
         const item = document.createElement("div");
         item.className = "list-item";
         item.innerHTML = `
           <div>
             <strong>${index + 1}. <span class="team-chip" style="color:${colors[team]};">${teamNames[team]}</span></strong>
-            <div class="muted">접속 ${meta.teamPlayerCounts[team]}명</div>
+            <div class="muted">접속 ${meta.teamPlayerCounts[team]}명 · 총 방어력 ${formatNumber(meta.teamStrengthTotals[team])}</div>
           </div>
-          <div>${formatNumber(score)}</div>
+          <div>${formatNumber(meta.teamTileCounts[team])}칸</div>
         `;
         ranking.appendChild(item);
       });
@@ -795,7 +748,7 @@
     if (!meta.topPlayers.length) {
       const empty = document.createElement("div");
       empty.className = "list-item";
-      empty.innerHTML = `<div class="muted">아직 입장한 플레이어가 없습니다.</div>`;
+      empty.innerHTML = `<div class="muted">아직 전투 기록이 없습니다.</div>`;
       container.appendChild(empty);
       return;
     }
@@ -806,9 +759,9 @@
       item.innerHTML = `
         <div>
           <strong>${index + 1}. <span class="team-chip" style="color:${colors[entry.team]};">${entry.label}</span></strong>
-          <div class="muted">${entry.teamLabel} · 클릭 ${formatNumber(entry.totalClicks)}</div>
+          <div class="muted">${entry.teamLabel} · 점령 ${formatNumber(entry.totalCaptures)} · 클릭 ${formatNumber(entry.totalActions)}</div>
         </div>
-        <div>${formatNumber(entry.totalContributed)}</div>
+        <div>${formatNumber(entry.warPoints)}점</div>
       `;
       container.appendChild(item);
     });
@@ -846,29 +799,93 @@
     });
   }
 
+  function isCandidate(tile) {
+    if (!player) {
+      return false;
+    }
+
+    if (tile.owner === player.team) {
+      return tile.strength < MAX_TILE_STRENGTH;
+    }
+
+    if (tile.base && tile.owner && tile.owner !== player.team) {
+      return false;
+    }
+
+    return hasAdjacentMine(tile);
+  }
+
+  function renderBoard() {
+    const board = document.getElementById("board");
+    board.innerHTML = "";
+
+    const centerX = board.clientWidth / 2 - HEX_W / 2;
+    const centerY = board.clientHeight / 2 - HEX_H / 2;
+
+    Object.values(tiles).forEach((tile) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "hex";
+
+      if (tile.owner) {
+        button.style.background = colors[tile.owner];
+      }
+
+      if (tile.owner === player?.team) {
+        button.classList.add("mine");
+      }
+
+      if (tile.base) {
+        button.classList.add("base");
+      }
+
+      if (isCandidate(tile)) {
+        button.classList.add("candidate");
+      } else if (!player) {
+        button.classList.add("disabled");
+      }
+
+      const x = tile.q * H_STEP + centerX;
+      const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
+
+      button.style.left = `${x}px`;
+      button.style.top = `${y}px`;
+
+      const label = tile.base ? "BASE" : (tile.owner ? teamNames[tile.owner] : "중립");
+      button.innerHTML = `
+        <div class="hex-inner">
+          <div>
+            <div class="hex-strength">${formatNumber(tile.strength)}</div>
+            <div class="hex-badge">${label}</div>
+          </div>
+        </div>
+      `;
+
+      button.title = `(${tile.q}, ${tile.r}) · ${label} · 방어력 ${tile.strength}`;
+      button.onclick = () => handleTileClick(tile);
+      board.appendChild(button);
+    });
+  }
+
   function renderAll() {
     renderInfo();
     renderFeed();
     renderRanking();
     renderTopPlayers();
     renderUpgrades();
+    renderBoard();
   }
 
-  function spawnFloat(amount) {
-    const layer = document.getElementById("floatLayer");
-    const node = document.createElement("div");
-    const offsetX = (Math.random() - 0.5) * 160;
-    const offsetY = (Math.random() - 0.5) * 40;
+  function handleTileClick(tile) {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
 
-    node.className = "float-pop";
-    node.textContent = `+${formatNumber(amount)}`;
-    node.style.setProperty("--offset-x", `${offsetX}px`);
-    node.style.setProperty("--offset-y", `${offsetY}px`);
-    layer.appendChild(node);
-
-    setTimeout(() => {
-      node.remove();
-    }, 900);
+    socket.emit("tileClick", {
+      q: tile.q,
+      r: tile.r
+    });
   }
 
   document.getElementById("startBtn").onclick = () => {
@@ -881,16 +898,6 @@
 
     lastStudentId = studentId;
     socket.emit("joinGame", { studentId });
-  };
-
-  document.getElementById("reactorBtn").onclick = () => {
-    if (!player) {
-      setBanner("먼저 입장해야 합니다.", "error");
-      return;
-    }
-
-    spawnFloat(player.clickValue);
-    socket.emit("clickReactor");
   };
 
   document.getElementById("id").addEventListener("input", updateJoinHint);
@@ -918,6 +925,7 @@
   });
 
   socket.on("gameState", (state) => {
+    tiles = state.tiles || {};
     meta = state.meta || meta;
     renderAll();
   });
@@ -928,7 +936,7 @@
 
     if (!wasJoined) {
       hasJoinedOnce = true;
-      setBanner(`${player.teamLabel} 소속 클릭러로 입장했습니다.`, "success");
+      setBanner(`${player.teamLabel} 소속 영토 사령관으로 입장했습니다.`, "success");
       pushFeed(`${player.teamLabel} · ${player.maskedStudentId} 상태가 동기화되었습니다.`);
     }
 
