@@ -3,128 +3,651 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hex Dominion IO</title>
+<title>Hex Reactor IO</title>
 <style>
+  :root {
+    --bg-top: #081326;
+    --bg-bottom: #12284b;
+    --panel: rgba(8, 18, 36, 0.78);
+    --panel-strong: rgba(12, 24, 48, 0.92);
+    --line: rgba(255, 255, 255, 0.11);
+    --text: #ebf4ff;
+    --muted: #9fb4d9;
+    --blue: #58a9ff;
+    --red: #ff6a7c;
+    --green: #4be194;
+    --yellow: #ffc85e;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --bad: #fb7185;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
   body {
     margin: 0;
-    background: #0b183d;
-    color: white;
-    text-align: center;
-    font-family: Arial, sans-serif;
+    min-height: 100vh;
+    color: var(--text);
+    font-family: "Segoe UI Variable Display", "Segoe UI", "Malgun Gothic", sans-serif;
+    background:
+      radial-gradient(circle at top, rgba(77, 169, 255, 0.18), transparent 28%),
+      radial-gradient(circle at 85% 15%, rgba(255, 200, 94, 0.14), transparent 22%),
+      linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+    overflow-x: hidden;
   }
-  h1 {
-    margin: 24px 0 12px;
-    font-size: 32px;
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 28px 28px;
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent);
   }
-  .ui {
-    margin-bottom: 16px;
+
+  .shell {
+    width: min(1440px, calc(100% - 28px));
+    margin: 0 auto;
+    padding: 28px 0 32px;
   }
-  .row {
+
+  .hero {
     display: flex;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .hero h1 {
+    margin: 0;
+    font-size: clamp(34px, 5vw, 58px);
+    letter-spacing: 0.02em;
+  }
+
+  .hero p {
+    margin: 12px 0 0;
+    max-width: 760px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .conn-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    color: var(--muted);
+  }
+
+  .conn-pill::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.55);
+  }
+
+  .conn-pill.connected::before {
+    background: var(--good);
+    box-shadow: 0 0 14px rgba(74, 222, 128, 0.55);
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 330px minmax(0, 1fr) 330px;
+    gap: 18px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    box-shadow: 0 24px 80px rgba(2, 9, 21, 0.36);
+    backdrop-filter: blur(16px);
+  }
+
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .section {
+    padding: 18px;
+  }
+
+  .section h2 {
+    margin: 0 0 14px;
+    font-size: 15px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #dceaff;
+  }
+
+  .join-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  input,
+  button {
+    border: 0;
+    border-radius: 16px;
+    font: inherit;
+  }
+
+  input {
+    flex: 1;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    outline: 1px solid transparent;
+  }
+
+  input:focus {
+    outline-color: rgba(88, 169, 255, 0.65);
+  }
+
+  input::placeholder {
+    color: rgba(235, 244, 255, 0.45);
+  }
+
+  button {
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+  }
+
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .primary-btn {
+    min-width: 96px;
+    padding: 14px 16px;
+    font-weight: 700;
+    color: #07101f;
+    background: linear-gradient(135deg, #72d3ff, #ffd971);
+    box-shadow: 0 14px 30px rgba(100, 188, 255, 0.24);
+  }
+
+  .helper {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .banner {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .banner.info {
+    border-color: rgba(88, 169, 255, 0.24);
+  }
+
+  .banner.success {
+    border-color: rgba(74, 222, 128, 0.3);
+    background: rgba(74, 222, 128, 0.08);
+  }
+
+  .banner.error {
+    border-color: rgba(251, 113, 133, 0.34);
+    background: rgba(251, 113, 133, 0.08);
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .stat {
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .stat-label {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .stat-value {
+    margin-top: 8px;
+    font-size: 26px;
+    font-weight: 700;
+  }
+
+  .list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .list-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .muted {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .team-chip {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    margin: 6px 0;
-    flex-wrap: wrap;
   }
-  input, select, button {
-    font-size: 14px;
-    padding: 6px 10px;
-    border: none;
-    border-radius: 4px;
+
+  .team-chip::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 14px currentColor;
   }
-  .info {
-    font-size: 15px;
-    line-height: 1.7;
-  }
-  #ranking {
-    margin-top: 8px;
-    line-height: 1.6;
-    font-size: 14px;
-    min-height: 96px;
-  }
-  #board {
+
+  .arena {
     position: relative;
-    width: 900px;
-    height: 720px;
-    margin: 0 auto 20px;
+    padding: 22px;
     overflow: hidden;
+    background:
+      radial-gradient(circle at center, rgba(88, 169, 255, 0.12), transparent 38%),
+      radial-gradient(circle at center, rgba(255, 200, 94, 0.08), transparent 52%);
   }
-  .hex {
+
+  .arena::before {
+    content: "";
     position: absolute;
-    width: 42px;
-    height: 36px;
-    background: #7b8494;
-    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-    border: 1px solid rgba(255,255,255,0.15);
-    cursor: pointer;
+    inset: 0;
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.35;
+    pointer-events: none;
   }
-  .player {
-    box-shadow: inset 0 0 0 2px white, 0 0 8px rgba(255,255,255,0.35);
+
+  .arena-top {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+    z-index: 1;
   }
-  .dead {
-    background: #111827 !important;
-    cursor: not-allowed;
-    border-color: rgba(255,255,255,0.08);
+
+  .arena-top p {
+    margin: 6px 0 0;
+    color: var(--muted);
+  }
+
+  .arena-score {
+    text-align: right;
+  }
+
+  .arena-score strong {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .arena-score span {
+    display: block;
+    margin-top: 6px;
+    font-size: 34px;
+    font-weight: 800;
+  }
+
+  .reactor-shell {
+    position: relative;
+    min-height: 540px;
+    display: grid;
+    place-items: center;
+    z-index: 1;
+  }
+
+  .reactor-rings {
+    position: absolute;
+    width: min(70vw, 560px);
+    height: min(70vw, 560px);
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 0 0 48px rgba(255, 255, 255, 0.02),
+      0 0 0 98px rgba(255, 255, 255, 0.02);
+    opacity: 0.85;
+  }
+
+  .reactor {
+    position: relative;
+    width: min(44vw, 320px);
+    height: min(44vw, 320px);
+    min-width: 220px;
+    min-height: 220px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: var(--text);
+    background:
+      radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.26), transparent 24%),
+      radial-gradient(circle at center, rgba(255, 255, 255, 0.22), rgba(44, 109, 255, 0.18) 40%, rgba(7, 17, 36, 0.96) 68%);
+    box-shadow:
+      inset 0 0 55px rgba(118, 211, 255, 0.18),
+      0 0 42px rgba(88, 169, 255, 0.22),
+      0 32px 80px rgba(4, 11, 24, 0.4);
+  }
+
+  .reactor:active {
+    transform: scale(0.98);
+  }
+
+  .reactor-inner {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    padding: 22px;
+  }
+
+  .reactor-label {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .reactor-value {
+    margin-top: 10px;
+    font-size: clamp(42px, 6vw, 64px);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+  }
+
+  .reactor-sub {
+    margin-top: 10px;
+    color: #d7e6ff;
+    line-height: 1.5;
+  }
+
+  .float-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .float-pop {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    --offset-x: 0px;
+    --offset-y: 0px;
+    font-size: 24px;
+    font-weight: 800;
+    color: #fff0ae;
+    text-shadow: 0 0 18px rgba(255, 216, 94, 0.8);
+    animation: rise 0.9s ease forwards;
+    white-space: nowrap;
+  }
+
+  @keyframes rise {
+    0% {
+      opacity: 0;
+      transform: translate(calc(-50% + var(--offset-x)), calc(-12px + var(--offset-y))) scale(0.7);
+    }
+    15% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(calc(-50% + var(--offset-x)), calc(-96px + var(--offset-y))) scale(1.08);
+    }
+  }
+
+  .upgrade-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .upgrade {
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .upgrade-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-weight: 700;
+  }
+
+  .upgrade p {
+    margin: 8px 0 12px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .upgrade button {
+    width: 100%;
+    padding: 12px 14px;
+    color: var(--text);
+    background: linear-gradient(135deg, rgba(88, 169, 255, 0.18), rgba(255, 200, 94, 0.16));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .feed {
+    display: grid;
+    gap: 8px;
+    max-height: 220px;
+    overflow: auto;
+  }
+
+  .feed-item {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    line-height: 1.45;
+    font-size: 13px;
+  }
+
+  @media (max-width: 1240px) {
+    .layout {
+      grid-template-columns: 1fr;
+    }
+
+    .reactor-shell {
+      min-height: 460px;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .shell {
+      width: min(100% - 18px, 1440px);
+      padding-top: 18px;
+    }
+
+    .hero {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .join-row {
+      flex-direction: column;
+    }
+
+    .stats {
+      grid-template-columns: 1fr;
+    }
+
+    .arena {
+      padding: 16px;
+    }
+
+    .arena-top {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .arena-score {
+      text-align: left;
+    }
   }
 </style>
 </head>
 <body>
+<div class="shell">
+  <header class="hero">
+    <div>
+      <h1>Hex Reactor IO</h1>
+      <p>반별로 같은 리액터를 두드려 점수를 올리는 실시간 팀 클리커입니다. 클릭과 업그레이드 계산은 서버가 처리하고, 자동 드론과 오버드라이브가 팀 점수를 계속 밀어 올립니다.</p>
+    </div>
+    <div id="connPill" class="conn-pill">연결 중...</div>
+  </header>
 
-<h1>Hex Dominion IO</h1>
+  <div class="layout">
+    <aside class="stack">
+      <section class="card section">
+        <h2>입장</h2>
+        <div class="join-row">
+          <input id="id" placeholder="학번 입력">
+          <button id="startBtn" class="primary-btn">입장</button>
+        </div>
+        <div id="joinHint" class="helper">학번 두 번째 자리 숫자로 반이 정해집니다.</div>
+        <div id="banner" class="banner info">연결되면 학번을 넣고 클릭러로 입장하세요.</div>
+      </section>
 
-<div class="ui">
-  <div class="row">
-    <input id="id" placeholder="학번">
-    <button id="startBtn">시작</button>
+      <section class="card section">
+        <h2>내 상태</h2>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-label">소속 반</div>
+            <div id="myTeam" class="stat-value">-</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">보유 골드</div>
+            <div id="gold" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">클릭 수치</div>
+            <div id="clickValue" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">초당 수입</div>
+            <div id="autoValue" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">총 클릭 수</div>
+            <div id="totalClicks" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">총 기여 점수</div>
+            <div id="totalContributed" class="stat-value">0</div>
+          </div>
+        </div>
+        <div id="incomeText" class="helper">자동 수입 정보를 기다리는 중...</div>
+      </section>
+
+      <section class="card section">
+        <h2>최근 알림</h2>
+        <div id="feed" class="feed"></div>
+      </section>
+    </aside>
+
+    <main class="card arena">
+      <div class="arena-top">
+        <div>
+          <h2 style="margin:0;">리액터</h2>
+          <p id="reactorHint">입장 후 중앙 코어를 클릭해 팀 점수를 올리세요.</p>
+        </div>
+        <div class="arena-score">
+          <strong>내 팀 점수</strong>
+          <span id="teamScore">0</span>
+        </div>
+      </div>
+
+      <div class="reactor-shell">
+        <div class="reactor-rings"></div>
+        <button id="reactorBtn" class="reactor" type="button" disabled>
+          <div class="reactor-inner">
+            <div>
+              <div class="reactor-label">Tap The Core</div>
+              <div id="reactorValue" class="reactor-value">+0</div>
+              <div class="reactor-sub">클릭할 때마다 개인 골드와 팀 점수가 함께 오릅니다.</div>
+            </div>
+          </div>
+        </button>
+        <div id="floatLayer" class="float-layer"></div>
+      </div>
+    </main>
+
+    <aside class="stack">
+      <section class="card section">
+        <h2>업그레이드</h2>
+        <div id="upgrades" class="upgrade-list"></div>
+      </section>
+
+      <section class="card section">
+        <h2>팀 순위</h2>
+        <div id="ranking" class="list"></div>
+      </section>
+
+      <section class="card section">
+        <h2>상위 기여자</h2>
+        <div id="topPlayers" class="list"></div>
+      </section>
+    </aside>
   </div>
-
-  <div class="info">
-    <div>내 소속 반: <span id="myTeam">-</span></div>
-    <div>내 점령 칸 수: <span id="myCount">0</span></div>
-    <div>돈: <span id="money">0</span></div>
-    <div>연결 상태: <span id="conn">연결 중...</span></div>
-  </div>
-
-  <div class="row">
-    <select id="action">
-      <option value="claim">점령 - 인접 빈 땅 (50)</option>
-      <option value="capture">탈취 - 인접 적 땅 (200)</option>
-      <option value="remote">원거리 - 아무 땅 (500)</option>
-      <option value="destroy">파괴 - 적 땅 비활성화 (250)</option>
-    </select>
-    <button id="moneyBtn">+1</button>
-  </div>
-
-  <div id="ranking"></div>
 </div>
 
-<div id="board"></div>
-
-<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
 <script>
-  // Render에 서버 배포 후 이 주소를 네 실제 주소로 바꿔
-  const SERVER_URL = "https://april-fool-s-day-game.onrender.com";
-  const socket = io(SERVER_URL, {
+  const socket = io({
     transports: ["websocket", "polling"]
   });
 
-  const HEX_W = 42;
-  const HEX_H = 36;
-  const H_STEP = HEX_W * 0.75;
-  const V_STEP = HEX_H;
-  const RADIUS = 10;
-
-  const CLAIM_COST = 50;
-  const CAPTURE_COST = 200;
-  const REMOTE_COST = 500;
-  const DESTROY_COST = 250;
-
   const colors = {
-    blue: "#3b82f6",
-    red: "#ef4444",
-    green: "#22c55e",
-    yellow: "#f59e0b"
+    blue: "#58a9ff",
+    red: "#ff6a7c",
+    green: "#4be194",
+    yellow: "#ffc85e"
   };
 
   const teamNames = {
@@ -134,140 +657,301 @@
     yellow: "4반"
   };
 
-  let tiles = {};
-  let money = 0;
-  let myTeam = null;
-  let started = false;
+  const upgrades = {
+    click: {
+      title: "클릭 증폭기",
+      desc: "클릭 한 번당 획득하는 점수와 골드를 올립니다."
+    },
+    auto: {
+      title: "자동 드론",
+      desc: "매초 자동으로 점수와 골드를 생산합니다."
+    },
+    boost: {
+      title: "오버드라이브",
+      desc: "클릭 수치와 자동 수입에 배율을 추가합니다."
+    }
+  };
 
-  function key(q, r) {
-    return `${q},${r}`;
+  let meta = {
+    onlinePlayers: 0,
+    passiveTickMs: 1000,
+    teamScores: { blue: 0, red: 0, green: 0, yellow: 0 },
+    teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
+    topPlayers: []
+  };
+
+  let player = null;
+  let lastStudentId = "";
+  let hasJoinedOnce = false;
+  let feedItems = ["서버 상태를 기다리는 중입니다."];
+
+  function formatNumber(value) {
+    return new Intl.NumberFormat("ko-KR").format(Math.floor(value || 0));
   }
 
-  function neighbors(tile) {
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-    return dirs
-      .map(([dq, dr]) => tiles[key(tile.q + dq, tile.r + dr)])
-      .filter(Boolean);
-  }
-
-  function hasAdjacentMine(tile) {
-    return neighbors(tile).some(n => n.active && n.owner === myTeam);
-  }
-
-  function render() {
-    renderBoard();
-    renderInfo();
-    renderRanking();
-  }
-
-  function renderBoard() {
-    const board = document.getElementById("board");
-    board.innerHTML = "";
-
-    const centerX = 450;
-    const centerY = 320;
-
-    Object.values(tiles).forEach(tile => {
-      const div = document.createElement("div");
-      div.className = "hex";
-
-      const x = tile.q * H_STEP + centerX;
-      const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
-
-      div.style.left = x + "px";
-      div.style.top = y + "px";
-
-      if (!tile.active) {
-        div.classList.add("dead");
-      } else if (tile.owner) {
-        div.style.background = colors[tile.owner];
-      }
-
-      if (tile.active && tile.owner === myTeam) {
-        div.classList.add("player");
-      }
-
-      div.onclick = () => handleTileClick(tile);
-      board.appendChild(div);
+  function pushFeed(message) {
+    const stamp = new Date().toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
     });
+
+    feedItems = [`${stamp}  ${message}`, ...feedItems].slice(0, 8);
+    renderFeed();
+  }
+
+  function setBanner(message, type = "info") {
+    const banner = document.getElementById("banner");
+    banner.className = `banner ${type}`;
+    banner.textContent = message;
+  }
+
+  function updateJoinHint() {
+    const value = document.getElementById("id").value.trim();
+
+    if (value.length < 2) {
+      document.getElementById("joinHint").textContent = "학번 두 번째 자리 숫자로 반이 정해집니다.";
+      return;
+    }
+
+    const predicted = {
+      "1": "1반",
+      "2": "2반",
+      "3": "3반",
+      "4": "4반"
+    }[value[1]];
+
+    document.getElementById("joinHint").textContent = predicted
+      ? `예상 소속 반: ${predicted}`
+      : "두 번째 자리 숫자가 1~4가 아니면 입장할 수 없습니다.";
+  }
+
+  function renderConnection(connected) {
+    const pill = document.getElementById("connPill");
+    pill.classList.toggle("connected", connected);
+    pill.textContent = connected ? "서버 연결됨" : "서버 재연결 중";
   }
 
   function renderInfo() {
-    document.getElementById("money").innerText = money;
-    document.getElementById("myTeam").innerText = myTeam ? teamNames[myTeam] : "-";
+    document.getElementById("myTeam").textContent = player ? player.teamLabel : "-";
+    document.getElementById("gold").textContent = formatNumber(player ? player.gold : 0);
+    document.getElementById("clickValue").textContent = formatNumber(player ? player.clickValue : 0);
+    document.getElementById("autoValue").textContent = formatNumber(player ? player.autoValue : 0);
+    document.getElementById("totalClicks").textContent = formatNumber(player ? player.totalClicks : 0);
+    document.getElementById("totalContributed").textContent = formatNumber(player ? player.totalContributed : 0);
 
-    let count = 0;
-    Object.values(tiles).forEach(tile => {
-      if (tile.active && tile.owner === myTeam) count++;
+    const teamScore = player ? meta.teamScores[player.team] : 0;
+    document.getElementById("teamScore").textContent = formatNumber(teamScore);
+    document.getElementById("reactorValue").textContent = `+${formatNumber(player ? player.clickValue : 0)}`;
+
+    if (meta.passiveTickMs) {
+      document.getElementById("incomeText").textContent =
+        `${meta.passiveTickMs / 1000}초마다 자동 드론 수치만큼 골드와 팀 점수가 누적됩니다. 현재 접속 ${meta.onlinePlayers}명`;
+    }
+
+    document.getElementById("reactorHint").textContent = player
+      ? `${player.teamLabel} 소속 ${player.maskedStudentId}. 클릭과 자동 수입이 팀 점수에 바로 반영됩니다.`
+      : "입장 후 중앙 코어를 클릭해 팀 점수를 올리세요.";
+
+    document.getElementById("reactorBtn").disabled = !player;
+  }
+
+  function renderFeed() {
+    const feed = document.getElementById("feed");
+    feed.innerHTML = "";
+
+    feedItems.forEach((entry) => {
+      const item = document.createElement("div");
+      item.className = "feed-item";
+      item.textContent = entry;
+      feed.appendChild(item);
     });
-    document.getElementById("myCount").innerText = count;
   }
 
   function renderRanking() {
-    const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
+    const ranking = document.getElementById("ranking");
+    ranking.innerHTML = "";
 
-    Object.values(tiles).forEach(tile => {
-      if (tile.active && tile.owner) counts[tile.owner]++;
-    });
-
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-
-    document.getElementById("ranking").innerHTML =
-      "<b>실시간 순위</b><br>" +
-      sorted.map(([team, count], i) =>
-        `${i + 1}. ${teamNames[team]}${team === myTeam ? " (나)" : ""}: ${count}칸`
-      ).join("<br>");
+    Object.entries(meta.teamScores)
+      .sort((left, right) => right[1] - left[1])
+      .forEach(([team, score], index) => {
+        const item = document.createElement("div");
+        item.className = "list-item";
+        item.innerHTML = `
+          <div>
+            <strong>${index + 1}. <span class="team-chip" style="color:${colors[team]};">${teamNames[team]}</span></strong>
+            <div class="muted">접속 ${meta.teamPlayerCounts[team]}명</div>
+          </div>
+          <div>${formatNumber(score)}</div>
+        `;
+        ranking.appendChild(item);
+      });
   }
 
-  function handleTileClick(tile) {
-    if (!started || !tile.active) return;
+  function renderTopPlayers() {
+    const container = document.getElementById("topPlayers");
+    container.innerHTML = "";
 
-    const action = document.getElementById("action").value;
-    socket.emit("tileAction", {
-      action,
-      q: tile.q,
-      r: tile.r,
-      team: myTeam
+    if (!meta.topPlayers.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-item";
+      empty.innerHTML = `<div class="muted">아직 입장한 플레이어가 없습니다.</div>`;
+      container.appendChild(empty);
+      return;
+    }
+
+    meta.topPlayers.forEach((entry, index) => {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      item.innerHTML = `
+        <div>
+          <strong>${index + 1}. <span class="team-chip" style="color:${colors[entry.team]};">${entry.label}</span></strong>
+          <div class="muted">${entry.teamLabel} · 클릭 ${formatNumber(entry.totalClicks)}</div>
+        </div>
+        <div>${formatNumber(entry.totalContributed)}</div>
+      `;
+      container.appendChild(item);
     });
+  }
+
+  function renderUpgrades() {
+    const container = document.getElementById("upgrades");
+    container.innerHTML = "";
+
+    Object.entries(upgrades).forEach(([type, config]) => {
+      const level = player ? player[`${type}Level`] : 0;
+      const cost = player ? player.nextCosts[type] : 0;
+      const affordable = player ? player.gold >= cost : false;
+
+      const card = document.createElement("div");
+      card.className = "upgrade";
+      card.innerHTML = `
+        <div class="upgrade-head">
+          <span>${config.title}</span>
+          <span>Lv.${level}</span>
+        </div>
+        <p>${config.desc}</p>
+      `;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = player ? `${formatNumber(cost)} 골드로 구매` : "입장 후 구매 가능";
+      button.disabled = !player || !affordable;
+      button.onclick = () => {
+        socket.emit("buyUpgrade", { type });
+      };
+
+      card.appendChild(button);
+      container.appendChild(card);
+    });
+  }
+
+  function renderAll() {
+    renderInfo();
+    renderFeed();
+    renderRanking();
+    renderTopPlayers();
+    renderUpgrades();
+  }
+
+  function spawnFloat(amount) {
+    const layer = document.getElementById("floatLayer");
+    const node = document.createElement("div");
+    const offsetX = (Math.random() - 0.5) * 160;
+    const offsetY = (Math.random() - 0.5) * 40;
+
+    node.className = "float-pop";
+    node.textContent = `+${formatNumber(amount)}`;
+    node.style.setProperty("--offset-x", `${offsetX}px`);
+    node.style.setProperty("--offset-y", `${offsetY}px`);
+    layer.appendChild(node);
+
+    setTimeout(() => {
+      node.remove();
+    }, 900);
   }
 
   document.getElementById("startBtn").onclick = () => {
-    const id = document.getElementById("id").value.trim();
-    if (id.length < 2) return;
+    const studentId = document.getElementById("id").value.trim();
 
-    const teamMap = { "1": "blue", "2": "red", "3": "green", "4": "yellow" };
-    myTeam = teamMap[id[1]];
-    if (!myTeam) return;
+    if (studentId.length < 2) {
+      setBanner("학번을 2자리 이상 입력하세요.", "error");
+      return;
+    }
 
-    started = true;
-    money = 0;
-    socket.emit("joinGame", { team: myTeam });
-    render();
+    lastStudentId = studentId;
+    socket.emit("joinGame", { studentId });
   };
 
-  document.getElementById("moneyBtn").onclick = () => {
-    if (!started) return;
-    money++;
-    renderInfo();
+  document.getElementById("reactorBtn").onclick = () => {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    spawnFloat(player.clickValue);
+    socket.emit("clickReactor");
   };
+
+  document.getElementById("id").addEventListener("input", updateJoinHint);
+  document.getElementById("id").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      document.getElementById("startBtn").click();
+    }
+  });
 
   socket.on("connect", () => {
-    document.getElementById("conn").innerText = "연결됨";
+    renderConnection(true);
+    setBanner("서버와 연결되었습니다.", "success");
+
+    if (lastStudentId && !player) {
+      socket.emit("joinGame", { studentId: lastStudentId });
+    }
   });
 
   socket.on("disconnect", () => {
-    document.getElementById("conn").innerText = "끊김";
+    renderConnection(false);
+    player = null;
+    setBanner("연결이 끊겼습니다. 재연결되면 자동으로 다시 입장합니다.", "error");
+    pushFeed("연결이 끊겨 재연결을 시도합니다.");
+    renderAll();
   });
 
   socket.on("gameState", (state) => {
-    tiles = state.tiles;
-    render();
+    meta = state.meta || meta;
+    renderAll();
   });
 
-  socket.on("actionRejected", (msg) => {
-    console.log(msg);
+  socket.on("playerState", (nextPlayer) => {
+    const wasJoined = Boolean(player);
+    player = nextPlayer;
+
+    if (!wasJoined) {
+      hasJoinedOnce = true;
+      setBanner(`${player.teamLabel} 소속 클릭러로 입장했습니다.`, "success");
+      pushFeed(`${player.teamLabel} · ${player.maskedStudentId} 상태가 동기화되었습니다.`);
+    }
+
+    renderAll();
   });
+
+  socket.on("notice", (message) => {
+    if (message === "이미 입장한 상태입니다." && hasJoinedOnce) {
+      return;
+    }
+
+    setBanner(message, "success");
+    pushFeed(message);
+  });
+
+  socket.on("actionRejected", (message) => {
+    setBanner(message, "error");
+    pushFeed(message);
+  });
+
+  updateJoinHint();
+  renderConnection(false);
+  renderAll();
 </script>
-
 </body>
 </html>
