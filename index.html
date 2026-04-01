@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hex Dominion</title>
+<title>Hex Dominion IO</title>
 <style>
   body {
     margin: 0;
@@ -12,16 +12,13 @@
     text-align: center;
     font-family: Arial, sans-serif;
   }
-
   h1 {
     margin: 24px 0 12px;
     font-size: 32px;
   }
-
   .ui {
     margin-bottom: 16px;
   }
-
   .row {
     display: flex;
     justify-content: center;
@@ -30,26 +27,22 @@
     margin: 6px 0;
     flex-wrap: wrap;
   }
-
   input, select, button {
     font-size: 14px;
     padding: 6px 10px;
     border: none;
     border-radius: 4px;
   }
-
   .info {
     font-size: 15px;
     line-height: 1.7;
   }
-
   #ranking {
     margin-top: 8px;
     line-height: 1.6;
     font-size: 14px;
     min-height: 96px;
   }
-
   #board {
     position: relative;
     width: 900px;
@@ -57,7 +50,6 @@
     margin: 0 auto 20px;
     overflow: hidden;
   }
-
   .hex {
     position: absolute;
     width: 42px;
@@ -67,11 +59,9 @@
     border: 1px solid rgba(255,255,255,0.15);
     cursor: pointer;
   }
-
   .player {
     box-shadow: inset 0 0 0 2px white, 0 0 8px rgba(255,255,255,0.35);
   }
-
   .dead {
     background: #111827 !important;
     cursor: not-allowed;
@@ -81,18 +71,19 @@
 </head>
 <body>
 
-<h1>Hex Dominion</h1>
+<h1>Hex Dominion IO</h1>
 
 <div class="ui">
   <div class="row">
     <input id="id" placeholder="학번">
-    <button onclick="startGame()">시작</button>
+    <button id="startBtn">시작</button>
   </div>
 
   <div class="info">
     <div>내 소속 반: <span id="myTeam">-</span></div>
     <div>내 점령 칸 수: <span id="myCount">0</span></div>
     <div>돈: <span id="money">0</span></div>
+    <div>연결 상태: <span id="conn">연결 중...</span></div>
   </div>
 
   <div class="row">
@@ -102,7 +93,7 @@
       <option value="remote">원거리 - 아무 땅 (500)</option>
       <option value="destroy">파괴 - 적 땅 비활성화 (250)</option>
     </select>
-    <button onclick="earnMoney()">+1</button>
+    <button id="moneyBtn">+1</button>
   </div>
 
   <div id="ranking"></div>
@@ -110,210 +101,172 @@
 
 <div id="board"></div>
 
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 <script>
-const HEX_W = 42;
-const HEX_H = 36;
-const H_STEP = HEX_W * 0.75;
-const V_STEP = HEX_H;
-const RADIUS = 10;
-
-const CLAIM_COST = 50;
-const CAPTURE_COST = 200;
-const REMOTE_COST = 500;
-const DESTROY_COST = 250;
-
-const colors = {
-  blue: "#3b82f6",
-  red: "#ef4444",
-  green: "#22c55e",
-  yellow: "#f59e0b"
-};
-
-const teamNames = {
-  blue: "1반",
-  red: "2반",
-  green: "3반",
-  yellow: "4반"
-};
-
-let tiles = {};
-let money = 0;
-let myTeam = null;
-let started = false;
-
-function key(q, r) {
-  return `${q},${r}`;
-}
-
-function makeMap() {
-  tiles = {};
-
-  for (let q = -RADIUS; q <= RADIUS; q++) {
-    const rMin = Math.max(-RADIUS, -q - RADIUS);
-    const rMax = Math.min(RADIUS, -q + RADIUS);
-
-    for (let r = rMin; r <= rMax; r++) {
-      tiles[key(q, r)] = {
-        q,
-        r,
-        owner: null,
-        active: true
-      };
-    }
-  }
-
-  tiles[key(-RADIUS, 0)].owner = "blue";
-  tiles[key(RADIUS, -RADIUS)].owner = "red";
-  tiles[key(-RADIUS, RADIUS)].owner = "green";
-  tiles[key(RADIUS, 0)].owner = "yellow";
-}
-
-function neighbors(tile) {
-  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-  return dirs
-    .map(([dq, dr]) => tiles[key(tile.q + dq, tile.r + dr)])
-    .filter(Boolean);
-}
-
-function hasAdjacentMine(tile) {
-  return neighbors(tile).some(n => n.active && n.owner === myTeam);
-}
-
-function startGame() {
-  const id = document.getElementById("id").value.trim();
-  if (id.length < 2) return;
-
-  const teamMap = { "1": "blue", "2": "red", "3": "green", "4": "yellow" };
-  myTeam = teamMap[id[1]];
-  if (!myTeam) return;
-
-  money = 0;
-  started = true;
-  makeMap();
-  render();
-}
-
-function earnMoney() {
-  if (!started) return;
-  money++;
-  renderInfo();
-}
-
-function render() {
-  renderBoard();
-  renderInfo();
-  renderRanking();
-}
-
-function renderBoard() {
-  const board = document.getElementById("board");
-  board.innerHTML = "";
-
-  const centerX = 450;
-  const centerY = 320;
-
-  Object.values(tiles).forEach(tile => {
-    const div = document.createElement("div");
-    div.className = "hex";
-
-    const x = tile.q * H_STEP + centerX;
-    const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
-
-    div.style.left = x + "px";
-    div.style.top = y + "px";
-
-    if (!tile.active) {
-      div.classList.add("dead");
-    } else if (tile.owner) {
-      div.style.background = colors[tile.owner];
-    }
-
-    if (tile.active && tile.owner === myTeam) {
-      div.classList.add("player");
-    }
-
-    div.onclick = () => handleTileClick(tile);
-    board.appendChild(div);
-  });
-}
-
-function renderInfo() {
-  document.getElementById("money").innerText = money;
-  document.getElementById("myTeam").innerText = myTeam ? teamNames[myTeam] : "-";
-
-  let count = 0;
-  Object.values(tiles).forEach(tile => {
-    if (tile.active && tile.owner === myTeam) count++;
-  });
-  document.getElementById("myCount").innerText = count;
-}
-
-function renderRanking() {
-  const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
-
-  Object.values(tiles).forEach(tile => {
-    if (tile.active && tile.owner) counts[tile.owner]++;
+  // Render에 서버 배포 후 이 주소를 네 실제 주소로 바꿔
+  const SERVER_URL = "https://april-fool-s-day-game.onrender.com";
+  const socket = io(SERVER_URL, {
+    transports: ["websocket", "polling"]
   });
 
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const HEX_W = 42;
+  const HEX_H = 36;
+  const H_STEP = HEX_W * 0.75;
+  const V_STEP = HEX_H;
+  const RADIUS = 10;
 
-  document.getElementById("ranking").innerHTML =
-    "<b>실시간 순위</b><br>" +
-    sorted.map(([team, count], i) =>
-      `${i + 1}. ${teamNames[team]}${team === myTeam ? " (나)" : ""}: ${count}칸`
-    ).join("<br>");
-}
+  const CLAIM_COST = 50;
+  const CAPTURE_COST = 200;
+  const REMOTE_COST = 500;
+  const DESTROY_COST = 250;
 
-function handleTileClick(tile) {
-  if (!started || !tile.active) return;
+  const colors = {
+    blue: "#3b82f6",
+    red: "#ef4444",
+    green: "#22c55e",
+    yellow: "#f59e0b"
+  };
 
-  const action = document.getElementById("action").value;
+  const teamNames = {
+    blue: "1반",
+    red: "2반",
+    green: "3반",
+    yellow: "4반"
+  };
 
-  if (action === "claim") {
-    if (tile.owner) return;
-    if (!hasAdjacentMine(tile)) return;
-    if (money < CLAIM_COST) return;
-    money -= CLAIM_COST;
-    tile.owner = myTeam;
+  let tiles = {};
+  let money = 0;
+  let myTeam = null;
+  let started = false;
+
+  function key(q, r) {
+    return `${q},${r}`;
   }
 
-  if (action === "capture") {
-    if (!tile.owner || tile.owner === myTeam) return;
-    if (!hasAdjacentMine(tile)) return;
-    if (money < CAPTURE_COST) return;
-    money -= CAPTURE_COST;
-    tile.owner = myTeam;
+  function neighbors(tile) {
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+    return dirs
+      .map(([dq, dr]) => tiles[key(tile.q + dq, tile.r + dr)])
+      .filter(Boolean);
   }
 
-  if (action === "remote") {
-    if (tile.owner === myTeam) return;
-    if (money < REMOTE_COST) return;
-    money -= REMOTE_COST;
-    tile.owner = myTeam;
+  function hasAdjacentMine(tile) {
+    return neighbors(tile).some(n => n.active && n.owner === myTeam);
   }
 
-  if (action === "destroy") {
-    if (!tile.owner || tile.owner === myTeam) return;
-    if (money < DESTROY_COST) return;
-    money -= DESTROY_COST;
-    tile.owner = null;
-    tile.active = false;
+  function render() {
+    renderBoard();
+    renderInfo();
+    renderRanking();
   }
 
-  render();
-  checkEnd();
-}
+  function renderBoard() {
+    const board = document.getElementById("board");
+    board.innerHTML = "";
 
-function checkEnd() {
-  const aliveTiles = Object.values(tiles).filter(tile => tile.active);
-  if (!aliveTiles.every(tile => tile.owner)) return;
+    const centerX = 450;
+    const centerY = 320;
 
-  const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
-  aliveTiles.forEach(tile => counts[tile.owner]++);
+    Object.values(tiles).forEach(tile => {
+      const div = document.createElement("div");
+      div.className = "hex";
 
-  const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-  alert("승리: " + teamNames[winner]);
-}
+      const x = tile.q * H_STEP + centerX;
+      const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
+
+      div.style.left = x + "px";
+      div.style.top = y + "px";
+
+      if (!tile.active) {
+        div.classList.add("dead");
+      } else if (tile.owner) {
+        div.style.background = colors[tile.owner];
+      }
+
+      if (tile.active && tile.owner === myTeam) {
+        div.classList.add("player");
+      }
+
+      div.onclick = () => handleTileClick(tile);
+      board.appendChild(div);
+    });
+  }
+
+  function renderInfo() {
+    document.getElementById("money").innerText = money;
+    document.getElementById("myTeam").innerText = myTeam ? teamNames[myTeam] : "-";
+
+    let count = 0;
+    Object.values(tiles).forEach(tile => {
+      if (tile.active && tile.owner === myTeam) count++;
+    });
+    document.getElementById("myCount").innerText = count;
+  }
+
+  function renderRanking() {
+    const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
+
+    Object.values(tiles).forEach(tile => {
+      if (tile.active && tile.owner) counts[tile.owner]++;
+    });
+
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+    document.getElementById("ranking").innerHTML =
+      "<b>실시간 순위</b><br>" +
+      sorted.map(([team, count], i) =>
+        `${i + 1}. ${teamNames[team]}${team === myTeam ? " (나)" : ""}: ${count}칸`
+      ).join("<br>");
+  }
+
+  function handleTileClick(tile) {
+    if (!started || !tile.active) return;
+
+    const action = document.getElementById("action").value;
+    socket.emit("tileAction", {
+      action,
+      q: tile.q,
+      r: tile.r,
+      team: myTeam
+    });
+  }
+
+  document.getElementById("startBtn").onclick = () => {
+    const id = document.getElementById("id").value.trim();
+    if (id.length < 2) return;
+
+    const teamMap = { "1": "blue", "2": "red", "3": "green", "4": "yellow" };
+    myTeam = teamMap[id[1]];
+    if (!myTeam) return;
+
+    started = true;
+    money = 0;
+    socket.emit("joinGame", { team: myTeam });
+    render();
+  };
+
+  document.getElementById("moneyBtn").onclick = () => {
+    if (!started) return;
+    money++;
+    renderInfo();
+  };
+
+  socket.on("connect", () => {
+    document.getElementById("conn").innerText = "연결됨";
+  });
+
+  socket.on("disconnect", () => {
+    document.getElementById("conn").innerText = "끊김";
+  });
+
+  socket.on("gameState", (state) => {
+    tiles = state.tiles;
+    render();
+  });
+
+  socket.on("actionRejected", (msg) => {
+    console.log(msg);
+  });
 </script>
 
 </body>
