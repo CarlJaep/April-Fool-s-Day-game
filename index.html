@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Hex Dominion</title>
+<style>
+body { margin:0; background:#0f172a; color:white; text-align:center; }
+#board { position:relative; width:1000px; height:800px; margin:auto; transform:scale(0.5); }
+.hex {
+  position:absolute;
+  width:40px; height:34px;
+  background:#6b7280;
+  clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
+  border:1px solid rgba(255,255,255,0.2);
+}
+.dead { background:#111827 !important; }
+</style>
+</head>
+<body>
+
+<h2>Hex Dominion</h2>
+<input id="id" placeholder="학번">
+<button onclick="start()">시작</button>
+<div>돈: <span id="money">0</span></div>
+
+<select id="action">
+<option value="claim">점령</option>
+<option value="capture">탈취</option>
+<option value="remote">원거리</option>
+<option value="destroy">파괴</option>
+</select>
+
+<button onclick="clickMoney()">+1</button>
+
+<div id="board"></div>
+
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script src="main.js"></script>
+
+</body>
+</html>
