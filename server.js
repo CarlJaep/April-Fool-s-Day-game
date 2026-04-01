@@ -19,12 +19,16 @@ const BOOST_STEP = Number(process.env.BOOST_STEP || 0.25);
 const MAX_CLICKS_PER_WINDOW = Number(process.env.MAX_CLICKS_PER_WINDOW || 18);
 const CLICK_WINDOW_MS = Number(process.env.CLICK_WINDOW_MS || 1000);
 const CLICK_RATE_LIMIT_COOLDOWN_MS = Number(process.env.CLICK_RATE_LIMIT_COOLDOWN_MS || 2500);
+const AUTO_BAN_RATE_LIMIT_STRIKES = Number(process.env.AUTO_BAN_RATE_LIMIT_STRIKES || 3);
+const AUTO_BAN_WINDOW_MS = Number(process.env.AUTO_BAN_WINDOW_MS || 15000);
 const CHAT_COOLDOWN_MS = Number(process.env.CHAT_COOLDOWN_MS || 700);
 const CHAT_HISTORY_LIMIT = Number(process.env.CHAT_HISTORY_LIMIT || 40);
 const MAX_CHAT_LENGTH = Number(process.env.MAX_CHAT_LENGTH || 140);
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS || 400);
 const BROADCAST_INTERVAL_MS = Number(process.env.BROADCAST_INTERVAL_MS || 120);
 const PORT = Number(process.env.PORT || 3000);
+const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || "admin1234").trim();
+const MAX_STUDENT_ID = Number(process.env.MAX_STUDENT_ID || 4444);
 
 const BASE_TILE_STRENGTH = Number(process.env.BASE_TILE_STRENGTH || 36);
 const NEUTRAL_TILE_STRENGTH = Number(process.env.NEUTRAL_TILE_STRENGTH || 22);
@@ -37,6 +41,8 @@ const BOMB_COST = Number(process.env.BOMB_COST || 55);
 const REBUILD_COST = Number(process.env.REBUILD_COST || 28);
 const EXPAND_COST = Number(process.env.EXPAND_COST || 34);
 const EXPANDED_TILE_STRENGTH = Number(process.env.EXPANDED_TILE_STRENGTH || 18);
+const TEAM_SUPPLY_COST = Number(process.env.TEAM_SUPPLY_COST || 48);
+const TEAM_SUPPLY_GOLD = Number(process.env.TEAM_SUPPLY_GOLD || 14);
 
 const UPGRADE_CONFIG = {
   click: {
@@ -99,10 +105,12 @@ let teamStrengthTotals = createEmptyTeamMap(0);
 let sessions = {};
 let studentToSocketId = {};
 let chatHistory = [];
+let bans = {};
 
 let saveTimer = null;
 let saveChain = Promise.resolve();
 let broadcastTimer = null;
+let isShuttingDown = false;
 
 restoreState(await storage.load());
 
@@ -164,6 +172,42 @@ function sanitizeChatHistory(rawChatHistory) {
       text: String(entry.text || "").slice(0, MAX_CHAT_LENGTH),
       createdAt: Number(entry.createdAt || Date.now())
     }));
+}
+
+function normalizeBan(studentId, rawBan) {
+  if (!rawBan || typeof rawBan !== "object") {
+    return null;
+  }
+
+  const normalizedId = String(studentId || rawBan.studentId || "").trim();
+  const team = getTeamFromStudentId(normalizedId);
+
+  if (!normalizedId || !team) {
+    return null;
+  }
+
+  return {
+    studentId: normalizedId,
+    team,
+    teamLabel: TEAM_LABELS[team],
+    reason: String(rawBan.reason || "관리자 차단").trim().slice(0, 80) || "관리자 차단",
+    bannedAt: Number(rawBan.bannedAt || Date.now()),
+    createdBy: String(rawBan.createdBy || "admin")
+  };
+}
+
+function sanitizeBans(rawBans) {
+  const nextBans = {};
+
+  Object.entries(rawBans || {}).forEach(([studentId, rawBan]) => {
+    const ban = normalizeBan(studentId, rawBan);
+
+    if (ban) {
+      nextBans[ban.studentId] = ban;
+    }
+  });
+
+  return nextBans;
 }
 
 function buildFreshTiles() {
@@ -257,12 +301,40 @@ function hasAdjacentTeam(tile, team) {
   return neighbors(tile).some((neighbor) => neighbor.active && neighbor.owner === team);
 }
 
-function getTeamFromStudentId(studentId) {
+function validateStudentId(studentId) {
   const normalized = String(studentId || "").trim();
 
-  if (normalized.length < 2) {
+  if (!/^\d{4}$/.test(normalized)) {
+    return {
+      ok: false,
+      reason: "학번은 4자리 숫자로 입력해야 합니다."
+    };
+  }
+
+  const numericId = Number(normalized);
+
+  if (numericId > MAX_STUDENT_ID) {
+    return {
+      ok: false,
+      reason: `학번은 ${MAX_STUDENT_ID} 이하여야 합니다.`
+    };
+  }
+
+  return {
+    ok: true,
+    normalized,
+    numericId
+  };
+}
+
+function getTeamFromStudentId(studentId) {
+  const validation = validateStudentId(studentId);
+
+  if (!validation.ok) {
     return null;
   }
+
+  const { normalized } = validation;
 
   const teamMap = {
     "1": "blue",
@@ -395,6 +467,7 @@ function restoreState(state) {
   profiles = sanitizeProfiles(state?.profiles || {});
   tiles = sanitizeTiles(state?.tiles);
   chatHistory = sanitizeChatHistory(state?.chatHistory);
+  bans = sanitizeBans(state?.bans || {});
   sessions = {};
   studentToSocketId = {};
   recomputeBoardStats();
@@ -402,11 +475,12 @@ function restoreState(state) {
 
 function getPersistedState() {
   return {
-    version: 2,
+    version: 3,
     savedAt: Date.now(),
     profiles,
     tiles,
-    chatHistory
+    chatHistory,
+    bans
   };
 }
 
@@ -459,6 +533,61 @@ function getOnlineCounts() {
   return counts;
 }
 
+function getOnlinePlayersForAdmin() {
+  return Object.values(sessions)
+    .map((session) => {
+      const profile = profiles[session.studentId];
+
+      if (!profile) {
+        return null;
+      }
+
+      return {
+        studentId: profile.studentId,
+        team: profile.team,
+        teamLabel: TEAM_LABELS[profile.team],
+        gold: profile.gold,
+        totalCaptures: profile.totalCaptures,
+        totalActions: profile.totalActions,
+        connectedAt: profile.lastSeenAt
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.studentId.localeCompare(right.studentId, "ko-KR"));
+}
+
+function getBansForAdmin() {
+  return Object.values(bans)
+    .sort((left, right) => right.bannedAt - left.bannedAt);
+}
+
+function isAdminSocket(socket) {
+  return Boolean(socket.data?.isAdmin);
+}
+
+function getAdminState(socket) {
+  const authenticated = isAdminSocket(socket);
+
+  return {
+    enabled: Boolean(ADMIN_PASSWORD),
+    authenticated,
+    onlinePlayers: authenticated ? getOnlinePlayersForAdmin() : [],
+    bans: authenticated ? getBansForAdmin() : []
+  };
+}
+
+function emitAdminState(socket) {
+  socket.emit("adminState", getAdminState(socket));
+}
+
+function broadcastAdminState() {
+  io.sockets.sockets.forEach((socket) => {
+    if (isAdminSocket(socket)) {
+      emitAdminState(socket);
+    }
+  });
+}
+
 function getTopPlayers() {
   return Object.values(profiles)
     .sort((left, right) => {
@@ -487,6 +616,8 @@ function getPublicMeta() {
     bombCost: BOMB_COST,
     rebuildCost: REBUILD_COST,
     expandCost: EXPAND_COST,
+    teamSupplyCost: TEAM_SUPPLY_COST,
+    teamSupplyGold: TEAM_SUPPLY_GOLD,
     teamTileCounts,
     teamStrengthTotals,
     teamPlayerCounts: getOnlineCounts(),
@@ -642,6 +773,84 @@ function removeSession(socketId) {
   }
 }
 
+function disconnectStudent(studentId, notice, bannedPayload = null) {
+  const existingSocketId = studentToSocketId[studentId];
+
+  if (!existingSocketId) {
+    return false;
+  }
+
+  const existingSocket = io.sockets.sockets.get(existingSocketId);
+
+  if (existingSocket) {
+    if (bannedPayload) {
+      existingSocket.emit("banned", bannedPayload);
+    } else if (notice) {
+      existingSocket.emit("notice", notice);
+    }
+
+    existingSocket.disconnect(true);
+  }
+
+  removeSession(existingSocketId);
+  return true;
+}
+
+function banStudent(studentId, reason, createdBy = "system") {
+  const validation = validateStudentId(studentId);
+
+  if (!validation.ok) {
+    return null;
+  }
+
+  const normalizedId = validation.normalized;
+  const team = getTeamFromStudentId(normalizedId);
+
+  if (!team) {
+    return null;
+  }
+
+  const ban = {
+    studentId: normalizedId,
+    team,
+    teamLabel: TEAM_LABELS[team],
+    reason: String(reason || "관리자 차단").trim().replace(/\s+/g, " ").slice(0, 80) || "관리자 차단",
+    bannedAt: Date.now(),
+    createdBy: String(createdBy || "system")
+  };
+
+  bans[normalizedId] = ban;
+  disconnectStudent(normalizedId, null, ban);
+  broadcastAdminState();
+  queueBroadcast();
+  queueSave();
+  return ban;
+}
+
+function registerRateLimitStrike(socket, session) {
+  const now = Date.now();
+
+  if (now - session.rateLimitWindowStartedAt > AUTO_BAN_WINDOW_MS) {
+    session.rateLimitWindowStartedAt = now;
+    session.rateLimitStrikes = 0;
+  }
+
+  session.rateLimitStrikes += 1;
+
+  if (session.rateLimitStrikes < AUTO_BAN_RATE_LIMIT_STRIKES) {
+    return false;
+  }
+
+  const ban = banStudent(session.studentId, "오토클릭 감지", "system");
+
+  if (ban) {
+    console.warn(`[security] auto-banned ${session.studentId} for repeated click rate limit violations`);
+    return true;
+  }
+
+  return false;
+}
+
 function kickExistingSession(studentId, incomingSocketId) {
   const existingSocketId = studentToSocketId[studentId];
 
@@ -649,14 +858,7 @@ function kickExistingSession(studentId, incomingSocketId) {
     return;
   }
 
-  const existingSocket = io.sockets.sockets.get(existingSocketId);
-
-  if (existingSocket) {
-    existingSocket.emit("notice", "다른 곳에서 로그인되어 기존 세션이 종료되었습니다.");
-    existingSocket.disconnect(true);
-  }
-
-  removeSession(existingSocketId);
+  disconnectStudent(studentId, "다른 곳에서 로그인되어 기존 세션이 종료되었습니다.");
 }
 
 function createSession(socket, studentId) {
@@ -667,7 +869,9 @@ function createSession(socket, studentId) {
     clicksInWindow: 0,
     cooldownUntil: 0,
     lastRateLimitNoticeAt: 0,
-    lastChatAt: 0
+    lastChatAt: 0,
+    rateLimitWindowStartedAt: 0,
+    rateLimitStrikes: 0
   };
 
   studentToSocketId[studentId] = socket.id;
@@ -695,7 +899,12 @@ function checkClickRateLimit(socket, session) {
   if (session.clicksInWindow > MAX_CLICKS_PER_WINDOW) {
     session.cooldownUntil = now + CLICK_RATE_LIMIT_COOLDOWN_MS;
     session.lastRateLimitNoticeAt = now;
-    reject(socket, "클릭 속도 제한에 걸렸습니다. 잠시 후 다시 시도하세요.");
+
+    if (registerRateLimitStrike(socket, session)) {
+      return false;
+    }
+
+    reject(socket, "클릭 속도 제한에 걸렸습니다. 반복되면 자동 차단됩니다.");
     return false;
   }
 
@@ -710,11 +919,25 @@ function joinPlayer(socket, studentId) {
     return;
   }
 
-  const normalizedId = String(studentId || "").trim();
+  const validation = validateStudentId(studentId);
+
+  if (!validation.ok) {
+    reject(socket, validation.reason);
+    return;
+  }
+
+  const normalizedId = validation.normalized;
   const team = getTeamFromStudentId(normalizedId);
+  const ban = bans[normalizedId];
 
   if (!team) {
-    reject(socket, "학번 두 번째 자리로 반을 판별할 수 없습니다.");
+    reject(socket, "학번 두 번째 자리 숫자는 1~4여야 합니다.");
+    return;
+  }
+
+  if (ban) {
+    socket.emit("banned", ban);
+    reject(socket, `차단된 계정입니다. ${ban.reason}`);
     return;
   }
 
@@ -727,6 +950,7 @@ function joinPlayer(socket, studentId) {
   socket.emit("notice", `${TEAM_LABELS[team]} 소속 영토 사령관으로 입장했습니다.`);
   emitPlayerState(socket);
   queueBroadcast();
+  broadcastAdminState();
   queueSave();
 }
 
@@ -975,6 +1199,57 @@ function handleBuyBomb(socket) {
   queueSave();
 }
 
+function handleTeamSupply(socket) {
+  const profile = getProfileBySocket(socket.id);
+
+  if (!profile) {
+    reject(socket, "먼저 입장해야 합니다.");
+    return;
+  }
+
+  if (profile.gold < TEAM_SUPPLY_COST) {
+    reject(socket, "팀 보급을 보내기 위한 골드가 부족합니다.");
+    return;
+  }
+
+  const teamSessions = Object.values(sessions).filter((session) => {
+    const teammate = profiles[session.studentId];
+    return teammate && teammate.team === profile.team;
+  });
+
+  if (!teamSessions.length) {
+    reject(socket, "보급을 보낼 팀원이 없습니다.");
+    return;
+  }
+
+  profile.gold -= TEAM_SUPPLY_COST;
+  touchProfile(profile);
+
+  teamSessions.forEach((session) => {
+    const teammate = profiles[session.studentId];
+
+    if (!teammate) {
+      return;
+    }
+
+    teammate.gold += TEAM_SUPPLY_GOLD;
+    touchProfile(teammate);
+
+    const teammateSocket = io.sockets.sockets.get(session.socketId);
+
+    if (teammateSocket) {
+      if (session.socketId !== socket.id) {
+        teammateSocket.emit("notice", `${profile.studentId} 님이 팀 보급을 보냈습니다. +${TEAM_SUPPLY_GOLD} 골드`);
+      }
+
+      emitPlayerState(teammateSocket);
+    }
+  });
+
+  socket.emit("notice", `${TEAM_LABELS[profile.team]} 전체에 보급을 보냈습니다. 1인당 ${TEAM_SUPPLY_GOLD} 골드 지급`);
+  queueSave();
+}
+
 function handleUpgrade(socket, type) {
   const profile = getProfileBySocket(socket.id);
 
@@ -1040,6 +1315,79 @@ function handleChatMessage(socket, rawText) {
   queueSave();
 }
 
+function handleAdminLogin(socket, rawPassword) {
+  if (!ADMIN_PASSWORD) {
+    reject(socket, "관리자 비밀번호가 설정되지 않았습니다.");
+    return;
+  }
+
+  if (String(rawPassword || "").trim() !== ADMIN_PASSWORD) {
+    reject(socket, "관리자 비밀번호가 올바르지 않습니다.");
+    return;
+  }
+
+  socket.data.isAdmin = true;
+  socket.emit("notice", "관리자 콘솔에 연결되었습니다.");
+  emitAdminState(socket);
+}
+
+function handleAdminLogout(socket) {
+  socket.data.isAdmin = false;
+  socket.emit("notice", "관리자 콘솔에서 로그아웃했습니다.");
+  emitAdminState(socket);
+}
+
+function handleAdminBan(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const validation = validateStudentId(payload?.studentId);
+
+  if (!validation.ok) {
+    reject(socket, validation.reason);
+    return;
+  }
+
+  const studentId = validation.normalized;
+
+  if (!getTeamFromStudentId(studentId)) {
+    reject(socket, "학번 두 번째 자리 숫자가 1~4인 계정만 차단할 수 있습니다.");
+    return;
+  }
+
+  const ban = banStudent(studentId, payload?.reason, "admin");
+
+  if (!ban) {
+    reject(socket, "차단 처리에 실패했습니다.");
+    return;
+  }
+
+  socket.emit("notice", `${studentId} 계정을 차단했습니다.`);
+  emitAdminState(socket);
+}
+
+function handleAdminUnban(socket, payload) {
+  if (!isAdminSocket(socket)) {
+    reject(socket, "관리자 권한이 필요합니다.");
+    return;
+  }
+
+  const studentId = String(payload?.studentId || "").trim();
+
+  if (!bans[studentId]) {
+    reject(socket, "차단 목록에 없는 학번입니다.");
+    return;
+  }
+
+  delete bans[studentId];
+  socket.emit("notice", `${studentId} 계정 차단을 해제했습니다.`);
+  emitAdminState(socket);
+  broadcastAdminState();
+  queueSave();
+}
+
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
@@ -1053,6 +1401,7 @@ app.get("/api/health", (req, res) => {
 
 io.on("connection", (socket) => {
   socket.emit("gameState", getGameState());
+  emitAdminState(socket);
 
   socket.on("joinGame", ({ studentId }) => {
     joinPlayer(socket, studentId);
@@ -1070,14 +1419,37 @@ io.on("connection", (socket) => {
     handleBuyBomb(socket);
   });
 
+  socket.on("teamSupply", () => {
+    handleTeamSupply(socket);
+  });
+
   socket.on("chatMessage", (text) => {
     handleChatMessage(socket, text);
   });
 
+  socket.on("adminLogin", ({ password }) => {
+    handleAdminLogin(socket, password);
+  });
+
+  socket.on("adminLogout", () => {
+    handleAdminLogout(socket);
+  });
+
+  socket.on("adminBan", (payload) => {
+    handleAdminBan(socket, payload);
+  });
+
+  socket.on("adminUnban", (payload) => {
+    handleAdminUnban(socket, payload);
+  });
+
   socket.on("disconnect", () => {
+    socket.data.isAdmin = false;
+
     if (sessions[socket.id]) {
       removeSession(socket.id);
       queueBroadcast();
+      broadcastAdminState();
       queueSave();
     }
   });
@@ -1115,6 +1487,11 @@ setInterval(() => {
 }, PASSIVE_TICK_MS);
 
 async function shutdown(signal) {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
   console.log(`[server] received ${signal}, flushing state...`);
 
   if (saveTimer) {
@@ -1123,7 +1500,7 @@ async function shutdown(signal) {
   }
 
   await flushSave();
-  process.exit(0);
+  process.exit(signal === "SIGINT" || signal === "SIGTERM" ? 0 : 1);
 }
 
 process.on("SIGINT", () => {
@@ -1132,6 +1509,16 @@ process.on("SIGINT", () => {
 
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("[server] uncaughtException", error);
+  void shutdown("uncaughtException");
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] unhandledRejection", reason);
+  void shutdown("unhandledRejection");
 });
 
 server.listen(PORT, () => {

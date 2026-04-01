@@ -544,6 +544,51 @@
     color: var(--good);
   }
 
+  .admin-auth,
+  .admin-actions {
+    display: grid;
+    gap: 10px;
+  }
+
+  .admin-toolbar {
+    display: flex;
+    gap: 10px;
+  }
+
+  .admin-toolbar button,
+  .admin-row button {
+    padding: 10px 12px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .admin-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .admin-row strong {
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .danger-btn {
+    background: rgba(251, 113, 133, 0.14) !important;
+    border-color: rgba(251, 113, 133, 0.28) !important;
+  }
+
+  .safe-btn {
+    background: rgba(74, 222, 128, 0.14) !important;
+    border-color: rgba(74, 222, 128, 0.28) !important;
+  }
+
   @media (max-width: 1260px) {
     .layout {
       grid-template-columns: 1fr;
@@ -594,10 +639,10 @@
       <section class="card section">
         <h2>입장</h2>
         <div class="join-row">
-          <input id="id" placeholder="학번 입력">
+          <input id="id" inputmode="numeric" maxlength="4" placeholder="학번 입력">
           <button id="startBtn" class="primary-btn">입장</button>
         </div>
-        <div id="joinHint" class="helper">학번 두 번째 자리 숫자로 반이 정해집니다.</div>
+        <div id="joinHint" class="helper">학번은 4자리 숫자이며 최대 4444입니다. 두 번째 자리 숫자로 반이 정해집니다.</div>
         <div id="banner" class="banner info">입장 후 보드 타일을 직접 클릭해 영토를 넓히세요.</div>
       </section>
 
@@ -688,9 +733,47 @@
       </section>
 
       <section class="card section">
+        <h2>팀 보급</h2>
+        <div id="teamSupplyHelp" class="helper">보급 정보를 불러오는 중...</div>
+        <div class="upgrade-list">
+          <div class="upgrade">
+            <div class="upgrade-head">
+              <span>보급 투하</span>
+              <span id="teamSupplyRecipients">0명</span>
+            </div>
+            <p>내 골드를 써서 같은 팀 접속 인원 전체에게 즉시 보급을 지급합니다.</p>
+            <button id="teamSupplyBtn" type="button">입장 후 보급 가능</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card section">
         <h2>업적</h2>
         <div id="achievementSummary" class="helper">업적 정보를 불러오는 중...</div>
         <div id="achievements" class="achievement-list"></div>
+      </section>
+
+      <section class="card section">
+        <h2>관리자 콘솔</h2>
+        <div id="adminSummary" class="helper">관리자 비밀번호로 로그인하면 밴 관리가 열립니다.</div>
+        <div id="adminAuth" class="admin-auth">
+          <input id="adminPassword" type="password" placeholder="관리자 비밀번호">
+          <div class="admin-toolbar">
+            <button id="adminLoginBtn" type="button">로그인</button>
+            <button id="adminLogoutBtn" type="button">로그아웃</button>
+          </div>
+        </div>
+        <div id="adminActions" class="admin-actions">
+          <input id="banReason" maxlength="80" placeholder="밴 사유 입력">
+          <div>
+            <h2 style="margin:0 0 10px;">접속 중 플레이어</h2>
+            <div id="adminPlayers" class="list"></div>
+          </div>
+          <div>
+            <h2 style="margin:0 0 10px;">차단 목록</h2>
+            <div id="adminBans" class="list"></div>
+          </div>
+        </div>
       </section>
 
       <section class="card section">
@@ -717,6 +800,7 @@
   const H_STEP = HEX_W * 0.75;
   const V_STEP = HEX_H;
   const MAX_TILE_STRENGTH = 60;
+  const MAX_STUDENT_ID = 4444;
 
   const colors = {
     blue: "#58a9ff",
@@ -755,6 +839,8 @@
     bombCost: 55,
     rebuildCost: 28,
     expandCost: 34,
+    teamSupplyCost: 48,
+    teamSupplyGold: 14,
     teamTileCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamStrengthTotals: { blue: 0, red: 0, green: 0, yellow: 0 },
     teamPlayerCounts: { blue: 0, red: 0, green: 0, yellow: 0 },
@@ -763,6 +849,12 @@
     achievementDefs: []
   };
   let player = null;
+  let adminState = {
+    enabled: true,
+    authenticated: false,
+    onlinePlayers: [],
+    bans: []
+  };
   let selectedMode = "battle";
   let lastStudentId = "";
   let hasJoinedOnce = false;
@@ -784,6 +876,38 @@
       hour: "2-digit",
       minute: "2-digit"
     });
+  }
+
+  function formatDateTime(value) {
+    return new Date(value).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+
+  function validateStudentId(studentId) {
+    const normalized = String(studentId || "").trim();
+
+    if (!/^\d{4}$/.test(normalized)) {
+      return {
+        ok: false,
+        reason: "학번은 4자리 숫자로 입력해야 합니다."
+      };
+    }
+
+    if (Number(normalized) > MAX_STUDENT_ID) {
+      return {
+        ok: false,
+        reason: `학번은 ${MAX_STUDENT_ID} 이하여야 합니다.`
+      };
+    }
+
+    return {
+      ok: true,
+      normalized
+    };
   }
 
   function neighbors(tile) {
@@ -857,9 +981,15 @@
 
   function updateJoinHint() {
     const value = document.getElementById("id").value.trim();
+    const validation = validateStudentId(value);
 
-    if (value.length < 2) {
-      document.getElementById("joinHint").textContent = "학번 두 번째 자리 숫자로 반이 정해집니다.";
+    if (!value) {
+      document.getElementById("joinHint").textContent = "학번은 4자리 숫자이며 최대 4444입니다. 두 번째 자리 숫자로 반이 정해집니다.";
+      return;
+    }
+
+    if (!validation.ok) {
+      document.getElementById("joinHint").textContent = validation.reason;
       return;
     }
 
@@ -872,7 +1002,7 @@
 
     document.getElementById("joinHint").textContent = predicted
       ? `예상 소속 반: ${predicted}`
-      : "두 번째 자리 숫자가 1~4가 아니면 입장할 수 없습니다.";
+      : "두 번째 자리 숫자는 1~4여야 합니다.";
   }
 
   function renderConnection(connected) {
@@ -992,9 +1122,15 @@
     document.getElementById("bombCount").textContent = formatNumber(player ? player.bombCount : 0);
 
     if (meta.passiveTickMs) {
-      document.getElementById("incomeText").textContent =
+    document.getElementById("incomeText").textContent =
         `${meta.passiveTickMs / 1000}초마다 보급 드론 수치만큼 골드가 들어옵니다. 현재 접속 ${meta.onlinePlayers}명`;
     }
+
+    const teamRecipients = player ? (meta.teamPlayerCounts[player.team] || 0) : 0;
+    document.getElementById("teamSupplyRecipients").textContent = `${formatNumber(teamRecipients)}명`;
+    document.getElementById("teamSupplyHelp").textContent = player
+      ? `${player.teamLabel} 접속 인원 ${formatNumber(teamRecipients)}명에게 1인당 ${formatNumber(meta.teamSupplyGold)} 골드를 보냅니다. 비용 ${formatNumber(meta.teamSupplyCost)} 골드`
+      : "입장 후 같은 팀 전체에게 즉시 보급을 투하할 수 있습니다.";
 
     document.getElementById("modeHelp").textContent =
       selectedMode === "bomb"
@@ -1134,7 +1270,7 @@
       item.innerHTML = `<div class="muted">아직 전장 보고가 없습니다. 첫 메시지를 남겨 보세요.</div>`;
       container.appendChild(item);
     } else {
-      history.slice().reverse().forEach((entry) => {
+      history.forEach((entry) => {
         const item = document.createElement("div");
         item.className = "chat-item";
 
@@ -1161,9 +1297,110 @@
       });
     }
 
+    container.scrollTop = container.scrollHeight;
+
     input.disabled = !player;
     sendButton.disabled = !player;
     input.placeholder = player ? "전선 상황을 입력하세요" : "입장 후 채팅 가능";
+  }
+
+  function renderAdmin() {
+    const summary = document.getElementById("adminSummary");
+    const auth = document.getElementById("adminAuth");
+    const actions = document.getElementById("adminActions");
+    const loginButton = document.getElementById("adminLoginBtn");
+    const logoutButton = document.getElementById("adminLogoutBtn");
+    const passwordInput = document.getElementById("adminPassword");
+    const players = document.getElementById("adminPlayers");
+    const bans = document.getElementById("adminBans");
+
+    players.innerHTML = "";
+    bans.innerHTML = "";
+
+    if (!adminState.enabled) {
+      summary.textContent = "서버에 관리자 비밀번호가 설정되지 않았습니다.";
+      auth.hidden = true;
+      actions.hidden = true;
+      return;
+    }
+
+    auth.hidden = false;
+    actions.hidden = !adminState.authenticated;
+    loginButton.disabled = adminState.authenticated;
+    logoutButton.disabled = !adminState.authenticated;
+    passwordInput.disabled = adminState.authenticated;
+
+    if (!adminState.authenticated) {
+      summary.textContent = "로그인 후 접속 중 플레이어를 즉시 밴하거나 해제할 수 있습니다.";
+      return;
+    }
+
+    summary.textContent = `관리자 연결됨 · 접속 ${adminState.onlinePlayers.length}명 · 차단 ${adminState.bans.length}건`;
+
+    if (!adminState.onlinePlayers.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-item";
+      empty.innerHTML = `<div class="muted">현재 접속 중인 플레이어가 없습니다.</div>`;
+      players.appendChild(empty);
+    } else {
+      adminState.onlinePlayers.forEach((entry) => {
+        const row = document.createElement("div");
+        row.className = "admin-row";
+        row.innerHTML = `
+          <div>
+            <strong>${entry.studentId}</strong>
+            <div class="muted">${entry.teamLabel} · 골드 ${formatNumber(entry.gold)} · 점령 ${formatNumber(entry.totalCaptures)} · 행동 ${formatNumber(entry.totalActions)}</div>
+          </div>
+        `;
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "danger-btn";
+        button.textContent = "밴";
+        button.onclick = () => {
+          const reason = document.getElementById("banReason").value.trim();
+          socket.emit("adminBan", {
+            studentId: entry.studentId,
+            reason
+          });
+        };
+
+        row.appendChild(button);
+        players.appendChild(row);
+      });
+    }
+
+    if (!adminState.bans.length) {
+      const empty = document.createElement("div");
+      empty.className = "list-item";
+      empty.innerHTML = `<div class="muted">차단된 학번이 없습니다.</div>`;
+      bans.appendChild(empty);
+      return;
+    }
+
+    adminState.bans.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "admin-row";
+      row.innerHTML = `
+        <div>
+          <strong>${entry.studentId}</strong>
+          <div class="muted">${entry.teamLabel} · ${entry.reason} · ${formatDateTime(entry.bannedAt)}</div>
+        </div>
+      `;
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "safe-btn";
+      button.textContent = "해제";
+      button.onclick = () => {
+        socket.emit("adminUnban", {
+          studentId: entry.studentId
+        });
+      };
+
+      row.appendChild(button);
+      bans.appendChild(row);
+    });
   }
 
   function renderUpgrades() {
@@ -1210,6 +1447,10 @@
     document.getElementById("bombModeBtn").disabled = !player || player.bombCount <= 0;
     document.getElementById("rebuildModeBtn").disabled = !player;
     document.getElementById("expandModeBtn").disabled = !player;
+    document.getElementById("teamSupplyBtn").textContent = player
+      ? `${formatNumber(meta.teamSupplyCost)} 골드로 팀 보급`
+      : "입장 후 보급 가능";
+    document.getElementById("teamSupplyBtn").disabled = !player || player.gold < meta.teamSupplyCost;
   }
 
   function isCandidate(tile) {
@@ -1340,6 +1581,7 @@
     renderFeed();
     renderChat();
     renderAchievements();
+    renderAdmin();
     renderRanking();
     renderTopPlayers();
     renderModes();
@@ -1366,14 +1608,15 @@
 
   document.getElementById("startBtn").onclick = () => {
     const studentId = document.getElementById("id").value.trim();
+    const validation = validateStudentId(studentId);
 
-    if (studentId.length < 2) {
-      setBanner("학번을 2자리 이상 입력하세요.", "error");
+    if (!validation.ok) {
+      setBanner(validation.reason, "error");
       return;
     }
 
-    lastStudentId = studentId;
-    socket.emit("joinGame", { studentId });
+    lastStudentId = validation.normalized;
+    socket.emit("joinGame", { studentId: validation.normalized });
   };
 
   document.getElementById("id").addEventListener("input", updateJoinHint);
@@ -1427,6 +1670,15 @@
     socket.emit("buyBomb");
   };
 
+  document.getElementById("teamSupplyBtn").onclick = () => {
+    if (!player) {
+      setBanner("먼저 입장해야 합니다.", "error");
+      return;
+    }
+
+    socket.emit("teamSupply");
+  };
+
   document.getElementById("chatForm").addEventListener("submit", (event) => {
     event.preventDefault();
 
@@ -1446,6 +1698,23 @@
     input.value = "";
   });
 
+  document.getElementById("adminLoginBtn").onclick = () => {
+    const password = document.getElementById("adminPassword").value;
+    socket.emit("adminLogin", { password });
+  };
+
+  document.getElementById("adminLogoutBtn").onclick = () => {
+    socket.emit("adminLogout");
+    document.getElementById("adminPassword").value = "";
+  };
+
+  document.getElementById("adminPassword").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      document.getElementById("adminLoginBtn").click();
+    }
+  });
+
   socket.on("connect", () => {
     renderConnection(true);
     setBanner("서버와 연결되었습니다.", "success");
@@ -1458,6 +1727,12 @@
   socket.on("disconnect", () => {
     renderConnection(false);
     player = null;
+    adminState = {
+      ...adminState,
+      authenticated: false,
+      onlinePlayers: [],
+      bans: []
+    };
     setBanner("연결이 끊겼습니다. 재연결되면 자동으로 다시 입장합니다.", "error");
     pushFeed("연결이 끊겨 재연결을 시도합니다.");
     renderAll();
@@ -1524,6 +1799,30 @@
     setBanner(`업적 달성: ${achievement.title}`, "success");
     pushFeed(`업적 달성 · ${achievement.title}`);
     renderAchievements();
+  });
+
+  socket.on("adminState", (nextAdminState) => {
+    adminState = {
+      ...adminState,
+      ...(nextAdminState || {}),
+      onlinePlayers: Array.isArray(nextAdminState?.onlinePlayers) ? nextAdminState.onlinePlayers : [],
+      bans: Array.isArray(nextAdminState?.bans) ? nextAdminState.bans : []
+    };
+
+    if (!adminState.authenticated) {
+      document.getElementById("adminPassword").value = "";
+    }
+
+    renderAdmin();
+  });
+
+  socket.on("banned", (ban) => {
+    player = null;
+    lastStudentId = "";
+    selectedMode = "battle";
+    setBanner(`접속이 차단되었습니다. ${ban?.reason || "관리자에게 문의하세요."}`, "error");
+    pushFeed(`차단됨 · ${ban?.studentId || ""} · ${ban?.reason || "관리자 차단"}`);
+    renderAll();
   });
 
   updateJoinHint();

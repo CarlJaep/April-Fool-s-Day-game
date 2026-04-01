@@ -18,13 +18,16 @@ npm start
 - 폭탄 아이템을 구매하면 비본진 타일을 거리 제한 없이 폐허로 만들어 아예 비활성화할 수 있습니다.
 - 폐허 재건으로 무너진 칸을 다시 활성화해 전초기지로 바꿀 수 있습니다.
 - 미개척 개척으로 맵 바깥 유휴 칸을 사서 새 땅을 만들 수 있습니다.
+- 팀 보급으로 같은 팀 접속 인원 전체에게 즉시 골드를 뿌릴 수 있습니다.
 - 업그레이드로 공격력과 자동 골드를 강화할 수 있습니다.
+- 관리자 콘솔 로그인 후 접속 중 학번을 밴하거나 해제할 수 있습니다.
 - 팀 순위는 점령 칸 수와 총 방어력으로 계산됩니다.
 
 ## 운영형 기능
 
 - 학번 기반 단일 세션: 같은 학번으로 다시 접속하면 이전 세션이 종료됩니다.
 - 클릭 속도 제한: 초당 과도한 클릭은 서버가 차단합니다.
+- 반복적인 클릭 속도 제한 위반은 오토클릭으로 판단해 자동 밴됩니다.
 - 저장: `REDIS_URL` 이 있으면 Redis, 없으면 `data/game-state.json` 파일에 저장합니다.
 - 환경변수 기반 CORS: `ALLOWED_ORIGINS` 로 허용 도메인을 제한할 수 있습니다.
 
@@ -34,6 +37,7 @@ npm start
 
 - `PORT`: 서버 포트
 - `ALLOWED_ORIGINS`: 허용 도메인 목록, 쉼표로 구분
+- `ADMIN_PASSWORD`: 관리자 콘솔 비밀번호
 - `MAP_RADIUS`: 육각 맵 반경
 - `REDIS_URL`: Redis 연결 문자열
 - `REDIS_KEY`: Redis 저장 키
@@ -46,9 +50,13 @@ npm start
 - `REBUILD_COST`: 폐허 재건 가격
 - `EXPAND_COST`: 바깥 땅 개척 가격
 - `EXPANDED_TILE_STRENGTH`: 재건/개척 직후 타일 방어력
+- `TEAM_SUPPLY_COST`: 팀 보급 1회 비용
+- `TEAM_SUPPLY_GOLD`: 팀 보급 1회당 팀원 1명에게 지급되는 골드
 - `MAX_CLICKS_PER_WINDOW`: 클릭 제한 횟수
 - `CLICK_WINDOW_MS`: 클릭 제한 측정 구간
 - `CLICK_RATE_LIMIT_COOLDOWN_MS`: 제한 후 대기 시간
+- `AUTO_BAN_RATE_LIMIT_STRIKES`: 자동 밴이 발동하는 제한 누적 횟수
+- `AUTO_BAN_WINDOW_MS`: 제한 누적을 계산하는 시간 구간
 
 ## 배포 전 해야 할 일
 
