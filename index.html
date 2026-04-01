@@ -1006,7 +1006,7 @@
             : `전투 모드: 우리 타일은 강화, 인접 적/중립 타일은 공격합니다. 폭탄 가격 ${formatNumber(meta.bombCost)} 골드`;
 
     document.getElementById("boardHint").textContent = player
-      ? `${player.teamLabel} ${player.maskedStudentId}. ${
+      ? `${player.teamLabel} ${player.studentId}. ${
           selectedMode === "bomb"
             ? "폭탄 모드에서는 원거리 타일도 바로 비활성화할 수 있습니다."
             : selectedMode === "rebuild"
@@ -1485,7 +1485,7 @@
     if (!wasJoined) {
       hasJoinedOnce = true;
       setBanner(`${player.teamLabel} 소속 영토 사령관으로 입장했습니다.`, "success");
-      pushFeed(`${player.teamLabel} · ${player.maskedStudentId} 상태가 동기화되었습니다.`);
+      pushFeed(`${player.teamLabel} · ${player.studentId} 상태가 동기화되었습니다.`);
     }
 
     renderAll();

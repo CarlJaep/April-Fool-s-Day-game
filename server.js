@@ -160,7 +160,7 @@ function sanitizeChatHistory(rawChatHistory) {
       id: String(entry.id || `${Date.now()}-${Math.random()}`),
       team: typeof entry.team === "string" && TEAM_LABELS[entry.team] ? entry.team : "blue",
       teamLabel: TEAM_LABELS[typeof entry.team === "string" && TEAM_LABELS[entry.team] ? entry.team : "blue"],
-      author: String(entry.author || "익명"),
+      author: String(entry.author || "알 수 없음"),
       text: String(entry.text || "").slice(0, MAX_CHAT_LENGTH),
       createdAt: Number(entry.createdAt || Date.now())
     }));
@@ -272,16 +272,6 @@ function getTeamFromStudentId(studentId) {
   };
 
   return teamMap[normalized[1]] || null;
-}
-
-function maskStudentId(studentId) {
-  const normalized = String(studentId || "").trim();
-
-  if (normalized.length <= 2) {
-    return normalized || "익명";
-  }
-
-  return `${normalized.slice(0, 2)}***`;
 }
 
 function calculateUpgradeCost(type, level) {
@@ -480,7 +470,7 @@ function getTopPlayers() {
     })
     .slice(0, 10)
     .map((profile) => ({
-      label: maskStudentId(profile.studentId),
+      label: profile.studentId,
       team: profile.team,
       teamLabel: TEAM_LABELS[profile.team],
       totalCaptures: profile.totalCaptures,
@@ -518,7 +508,6 @@ function getPlayerState(profile) {
     team: profile.team,
     teamLabel: TEAM_LABELS[profile.team],
     studentId: profile.studentId,
-    maskedStudentId: maskStudentId(profile.studentId),
     gold: profile.gold,
     bombCount: profile.bombCount,
     clickLevel: profile.clickLevel,
@@ -576,7 +565,7 @@ function buildChatMessage(profile, text) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     team: profile.team,
     teamLabel: TEAM_LABELS[profile.team],
-    author: maskStudentId(profile.studentId),
+    author: profile.studentId,
     text,
     createdAt: Date.now()
   };
