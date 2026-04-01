@@ -24,7 +24,7 @@ const BROADCAST_INTERVAL_MS = Number(process.env.BROADCAST_INTERVAL_MS || 120);
 const PORT = Number(process.env.PORT || 3000);
 
 const BASE_TILE_STRENGTH = Number(process.env.BASE_TILE_STRENGTH || 36);
-const NEUTRAL_TILE_STRENGTH = Number(process.env.NEUTRAL_TILE_STRENGTH || 14);
+const NEUTRAL_TILE_STRENGTH = Number(process.env.NEUTRAL_TILE_STRENGTH || 22);
 const CAPTURED_TILE_STRENGTH = Number(process.env.CAPTURED_TILE_STRENGTH || 22);
 const MAX_TILE_STRENGTH = Number(process.env.MAX_TILE_STRENGTH || 60);
 const FORTIFY_RATIO = Number(process.env.FORTIFY_RATIO || 0.6);
