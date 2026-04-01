@@ -11,66 +11,60 @@
     color: white;
     text-align: center;
     font-family: Arial, sans-serif;
-    overflow-x: hidden;
   }
 
   h1 {
-    margin-top: 24px;
-    margin-bottom: 14px;
+    margin: 24px 0 12px;
     font-size: 32px;
   }
 
-  .top-ui {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+  .ui {
+    margin-bottom: 16px;
   }
 
   .row {
     display: flex;
-    gap: 8px;
-    align-items: center;
     justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
     flex-wrap: wrap;
   }
 
   input, select, button {
     font-size: 14px;
     padding: 6px 10px;
-    border-radius: 4px;
     border: none;
+    border-radius: 4px;
   }
 
-  .info-box {
-    margin-top: 6px;
-    line-height: 1.7;
+  .info {
     font-size: 15px;
+    line-height: 1.7;
   }
 
   #ranking {
     margin-top: 8px;
-    line-height: 1.7;
+    line-height: 1.6;
     font-size: 14px;
     min-height: 96px;
   }
 
   #board {
     position: relative;
-    width: 100%;
-    height: 900px;
-    margin: 0 auto;
+    width: 900px;
+    height: 720px;
+    margin: 0 auto 20px;
     overflow: hidden;
   }
 
   .hex {
     position: absolute;
-    width: 40px;
-    height: 34px;
-    background: #6b7280;
-    clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
-    border: 1px solid rgba(255,255,255,0.18);
+    width: 42px;
+    height: 36px;
+    background: #7b8494;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    border: 1px solid rgba(255,255,255,0.15);
     cursor: pointer;
   }
 
@@ -89,26 +83,26 @@
 
 <h1>Hex Dominion</h1>
 
-<div class="top-ui">
+<div class="ui">
   <div class="row">
     <input id="id" placeholder="학번">
-    <button onclick="start()">시작</button>
+    <button onclick="startGame()">시작</button>
   </div>
 
-  <div class="info-box">
+  <div class="info">
     <div>내 소속 반: <span id="myTeam">-</span></div>
-    <div>내 점령 칸 수: <span id="myTiles">0</span></div>
+    <div>내 점령 칸 수: <span id="myCount">0</span></div>
     <div>돈: <span id="money">0</span></div>
   </div>
 
   <div class="row">
     <select id="action">
-      <option value="claim">점령 - 인접 빈 땅 차지 (50)</option>
-      <option value="capture">탈취 - 인접 적 땅 빼앗기 (200)</option>
-      <option value="remote">원거리 - 어디든 점령 (500)</option>
+      <option value="claim">점령 - 인접 빈 땅 (50)</option>
+      <option value="capture">탈취 - 인접 적 땅 (200)</option>
+      <option value="remote">원거리 - 아무 땅 (500)</option>
       <option value="destroy">파괴 - 적 땅 비활성화 (250)</option>
     </select>
-    <button onclick="clickMoney()">+1</button>
+    <button onclick="earnMoney()">+1</button>
   </div>
 
   <div id="ranking"></div>
@@ -117,11 +111,11 @@
 <div id="board"></div>
 
 <script>
-const HEX_W = 40;
-const HEX_H = 34;
+const HEX_W = 42;
+const HEX_H = 36;
 const H_STEP = HEX_W * 0.75;
 const V_STEP = HEX_H;
-const R = 10;
+const RADIUS = 10;
 
 const CLAIM_COST = 50;
 const CAPTURE_COST = 200;
@@ -144,21 +138,21 @@ const teamNames = {
 
 let tiles = {};
 let money = 0;
-let team = null;
+let myTeam = null;
 let started = false;
 
 function key(q, r) {
-  return q + "," + r;
+  return `${q},${r}`;
 }
 
-function buildMap() {
+function makeMap() {
   tiles = {};
 
-  for (let q = -R; q <= R; q++) {
-    const r1 = Math.max(-R, -q - R);
-    const r2 = Math.min(R, -q + R);
+  for (let q = -RADIUS; q <= RADIUS; q++) {
+    const rMin = Math.max(-RADIUS, -q - RADIUS);
+    const rMax = Math.min(RADIUS, -q + RADIUS);
 
-    for (let r = r1; r <= r2; r++) {
+    for (let r = rMin; r <= rMax; r++) {
       tiles[key(q, r)] = {
         q,
         r,
@@ -168,170 +162,158 @@ function buildMap() {
     }
   }
 
-  tiles[key(-R, 0)].owner = "blue";
-  tiles[key(R, -R)].owner = "red";
-  tiles[key(-R, R)].owner = "green";
-  tiles[key(R, 0)].owner = "yellow";
+  tiles[key(-RADIUS, 0)].owner = "blue";
+  tiles[key(RADIUS, -RADIUS)].owner = "red";
+  tiles[key(-RADIUS, RADIUS)].owner = "green";
+  tiles[key(RADIUS, 0)].owner = "yellow";
 }
 
-function neighbors(t) {
+function neighbors(tile) {
   const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
   return dirs
-    .map(([dq, dr]) => tiles[key(t.q + dq, t.r + dr)])
+    .map(([dq, dr]) => tiles[key(tile.q + dq, tile.r + dr)])
     .filter(Boolean);
 }
 
-function hasAdj(t) {
-  return neighbors(t).some(n => n.active && n.owner === team);
+function hasAdjacentMine(tile) {
+  return neighbors(tile).some(n => n.active && n.owner === myTeam);
 }
 
-function draw() {
+function startGame() {
+  const id = document.getElementById("id").value.trim();
+  if (id.length < 2) return;
+
+  const teamMap = { "1": "blue", "2": "red", "3": "green", "4": "yellow" };
+  myTeam = teamMap[id[1]];
+  if (!myTeam) return;
+
+  money = 0;
+  started = true;
+  makeMap();
+  render();
+}
+
+function earnMoney() {
+  if (!started) return;
+  money++;
+  renderInfo();
+}
+
+function render() {
+  renderBoard();
+  renderInfo();
+  renderRanking();
+}
+
+function renderBoard() {
   const board = document.getElementById("board");
   board.innerHTML = "";
 
-  const centerX = window.innerWidth / 2 - 20;
-  const centerY = 260;
+  const centerX = 450;
+  const centerY = 320;
 
-  Object.values(tiles).forEach(t => {
+  Object.values(tiles).forEach(tile => {
     const div = document.createElement("div");
     div.className = "hex";
 
-    const x = t.q * H_STEP + centerX;
-    const y = t.r * V_STEP + t.q * (HEX_H / 2) + centerY;
+    const x = tile.q * H_STEP + centerX;
+    const y = tile.r * V_STEP + tile.q * (HEX_H / 2) + centerY;
 
     div.style.left = x + "px";
     div.style.top = y + "px";
 
-    if (!t.active) {
+    if (!tile.active) {
       div.classList.add("dead");
-    } else if (t.owner) {
-      div.style.background = colors[t.owner];
+    } else if (tile.owner) {
+      div.style.background = colors[tile.owner];
     }
 
-    if (t.active && t.owner === team) {
+    if (tile.active && tile.owner === myTeam) {
       div.classList.add("player");
     }
 
-    div.onclick = () => clickTile(t);
+    div.onclick = () => handleTileClick(tile);
     board.appendChild(div);
   });
-
-  updateInfo();
-  updateRanking();
 }
 
-function start() {
-  const id = document.getElementById("id").value.trim();
-  if (id.length < 2) return;
-
-  const map = {
-    "1": "blue",
-    "2": "red",
-    "3": "green",
-    "4": "yellow"
-  };
-
-  team = map[id[1]];
-  if (!team) return;
-
-  money = 0;
-  started = true;
-  buildMap();
-  updateInfo();
-  draw();
-}
-
-function clickMoney() {
-  if (!started) return;
-  money++;
-  draw();
-}
-
-function clickTile(t) {
-  if (!started) return;
-  if (!t.active) return;
-
-  const action = document.getElementById("action").value;
-
-  if (action === "claim" && !t.owner && hasAdj(t) && money >= CLAIM_COST) {
-    money -= CLAIM_COST;
-    t.owner = team;
-  }
-
-  if (action === "capture" && t.owner && t.owner !== team && hasAdj(t) && money >= CAPTURE_COST) {
-    money -= CAPTURE_COST;
-    t.owner = team;
-  }
-
-  if (action === "remote" && t.owner !== team && money >= REMOTE_COST) {
-    money -= REMOTE_COST;
-    t.owner = team;
-  }
-
-  if (action === "destroy" && t.owner && t.owner !== team && money >= DESTROY_COST) {
-    money -= DESTROY_COST;
-    t.owner = null;
-    t.active = false;
-  }
-
-  draw();
-  checkEnd();
-}
-
-function updateInfo() {
+function renderInfo() {
   document.getElementById("money").innerText = money;
-  document.getElementById("myTeam").innerText = team ? teamNames[team] : "-";
+  document.getElementById("myTeam").innerText = myTeam ? teamNames[myTeam] : "-";
 
-  let myCount = 0;
-  Object.values(tiles).forEach(t => {
-    if (t.active && t.owner === team) myCount++;
+  let count = 0;
+  Object.values(tiles).forEach(tile => {
+    if (tile.active && tile.owner === myTeam) count++;
   });
-  document.getElementById("myTiles").innerText = myCount;
+  document.getElementById("myCount").innerText = count;
 }
 
-function updateRanking() {
-  const count = {
-    blue: 0,
-    red: 0,
-    green: 0,
-    yellow: 0
-  };
+function renderRanking() {
+  const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
 
-  Object.values(tiles).forEach(t => {
-    if (t.active && t.owner) count[t.owner]++;
+  Object.values(tiles).forEach(tile => {
+    if (tile.active && tile.owner) counts[tile.owner]++;
   });
 
-  const sorted = Object.entries(count).sort((a, b) => b[1] - a[1]);
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
 
   document.getElementById("ranking").innerHTML =
     "<b>실시간 순위</b><br>" +
-    sorted
-      .map(([t, c], i) => `${i + 1}. ${teamNames[t]}${t === team ? " (나)" : ""}: ${c}칸`)
-      .join("<br>");
+    sorted.map(([team, count], i) =>
+      `${i + 1}. ${teamNames[team]}${team === myTeam ? " (나)" : ""}: ${count}칸`
+    ).join("<br>");
+}
+
+function handleTileClick(tile) {
+  if (!started || !tile.active) return;
+
+  const action = document.getElementById("action").value;
+
+  if (action === "claim") {
+    if (tile.owner) return;
+    if (!hasAdjacentMine(tile)) return;
+    if (money < CLAIM_COST) return;
+    money -= CLAIM_COST;
+    tile.owner = myTeam;
+  }
+
+  if (action === "capture") {
+    if (!tile.owner || tile.owner === myTeam) return;
+    if (!hasAdjacentMine(tile)) return;
+    if (money < CAPTURE_COST) return;
+    money -= CAPTURE_COST;
+    tile.owner = myTeam;
+  }
+
+  if (action === "remote") {
+    if (tile.owner === myTeam) return;
+    if (money < REMOTE_COST) return;
+    money -= REMOTE_COST;
+    tile.owner = myTeam;
+  }
+
+  if (action === "destroy") {
+    if (!tile.owner || tile.owner === myTeam) return;
+    if (money < DESTROY_COST) return;
+    money -= DESTROY_COST;
+    tile.owner = null;
+    tile.active = false;
+  }
+
+  render();
+  checkEnd();
 }
 
 function checkEnd() {
-  const alive = Object.values(tiles).filter(t => t.active);
-  if (!alive.every(t => t.owner)) return;
+  const aliveTiles = Object.values(tiles).filter(tile => tile.active);
+  if (!aliveTiles.every(tile => tile.owner)) return;
 
-  const count = {
-    blue: 0,
-    red: 0,
-    green: 0,
-    yellow: 0
-  };
+  const counts = { blue: 0, red: 0, green: 0, yellow: 0 };
+  aliveTiles.forEach(tile => counts[tile.owner]++);
 
-  alive.forEach(t => {
-    count[t.owner]++;
-  });
-
-  const win = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
-  alert("승리: " + teamNames[win]);
+  const winner = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  alert("승리: " + teamNames[winner]);
 }
-
-window.addEventListener("resize", () => {
-  if (started) draw();
-});
 </script>
 
 </body>
