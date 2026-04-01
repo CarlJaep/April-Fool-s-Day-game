@@ -2,63 +2,110 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hex Dominion</title>
-
 <style>
-body {
-  margin: 0;
-  background: #0f172a;
-  color: white;
-  text-align: center;
-  font-family: Arial;
-}
+  body {
+    margin: 0;
+    background: #0b183d;
+    color: white;
+    text-align: center;
+    font-family: Arial, sans-serif;
+    overflow-x: hidden;
+  }
 
-#board {
-  position: relative;
-  width: 100%;
-  height: 600px;
-}
+  h1 {
+    margin-top: 28px;
+    margin-bottom: 16px;
+    font-size: 32px;
+  }
 
-.hex {
-  position: absolute;
-  width: 40px;
-  height: 34px;
-  background: #6b7280;
-  clip-path: polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
-  border: 1px solid rgba(255,255,255,0.2);
-  cursor: pointer;
-}
+  .top-ui {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
 
-.dead {
-  background: #111827 !important;
-  cursor: not-allowed;
-}
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
 
-.player {
-  box-shadow: inset 0 0 0 2px white;
-}
+  input, select, button {
+    font-size: 14px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: none;
+  }
+
+  #money, #ranking {
+    font-weight: bold;
+  }
+
+  #ranking {
+    line-height: 1.6;
+    margin-top: 6px;
+    min-height: 80px;
+  }
+
+  #board {
+    position: relative;
+    width: 100%;
+    height: 900px;
+    margin: 0 auto;
+    overflow: hidden;
+  }
+
+  .hex {
+    position: absolute;
+    width: 40px;
+    height: 34px;
+    background: #6b7280;
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    border: 1px solid rgba(255,255,255,0.18);
+    cursor: pointer;
+  }
+
+  .player {
+    box-shadow: inset 0 0 0 2px white;
+  }
+
+  .dead {
+    background: #111827 !important;
+    cursor: not-allowed;
+    border-color: rgba(255,255,255,0.08);
+  }
 </style>
-
 </head>
 <body>
 
-<h2>Hex Dominion</h2>
+<h1>Hex Dominion</h1>
 
-<input id="id" placeholder="학번">
-<button onclick="start()">시작</button>
+<div class="top-ui">
+  <div class="row">
+    <input id="id" placeholder="학번">
+    <button onclick="start()">시작</button>
+  </div>
 
-<div>돈: <span id="money">0</span></div>
+  <div>돈: <span id="money">0</span></div>
 
-<select id="action">
-<option value="claim">점령 - 인접 (50)</option>
-<option value="capture">탈취 - 인접 (200)</option>
-<option value="remote">원거리 (500)</option>
-<option value="destroy">파괴 (250)</option>
-</select>
+  <div class="row">
+    <select id="action">
+      <option value="claim">점령 - 인접 빈 땅 차지 (50)</option>
+      <option value="capture">탈취 - 인접 적 땅 빼앗기 (200)</option>
+      <option value="remote">원거리 - 어디든 점령 (500)</option>
+      <option value="destroy">파괴 - 적 땅 비활성화 (250)</option>
+    </select>
+    <button onclick="clickMoney()">+1</button>
+  </div>
 
-<button onclick="clickMoney()">+1</button>
-
-<div id="ranking"></div>
+  <div id="ranking"></div>
+</div>
 
 <div id="board"></div>
 
@@ -91,44 +138,74 @@ const teamNames = {
 let tiles = {};
 let money = 0;
 let team = null;
+let started = false;
 
-function key(q,r){ return q+","+r; }
+function key(q, r) {
+  return q + "," + r;
+}
 
-function buildMap(){
-  for(let q=-R;q<=R;q++){
-    let r1=Math.max(-R,-q-R);
-    let r2=Math.min(R,-q+R);
-    for(let r=r1;r<=r2;r++){
-      tiles[key(q,r)] = {
-        q,r,
-        owner:null,
-        active:true
+function buildMap() {
+  tiles = {};
+
+  for (let q = -R; q <= R; q++) {
+    const r1 = Math.max(-R, -q - R);
+    const r2 = Math.min(R, -q + R);
+
+    for (let r = r1; r <= r2; r++) {
+      tiles[key(q, r)] = {
+        q,
+        r,
+        owner: null,
+        active: true
       };
     }
   }
+
+  tiles[key(-R, 0)].owner = "blue";
+  tiles[key(R, -R)].owner = "red";
+  tiles[key(-R, R)].owner = "green";
+  tiles[key(R, 0)].owner = "yellow";
 }
 
-function draw(){
+function neighbors(t) {
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
+  return dirs
+    .map(([dq, dr]) => tiles[key(t.q + dq, t.r + dr)])
+    .filter(Boolean);
+}
+
+function hasAdj(t) {
+  return neighbors(t).some(n => n.active && n.owner === team);
+}
+
+function draw() {
   const board = document.getElementById("board");
   board.innerHTML = "";
+
+  const centerX = window.innerWidth / 2 - 20;
+  const centerY = 260;
 
   Object.values(tiles).forEach(t => {
     const div = document.createElement("div");
     div.className = "hex";
 
-    let x = t.q * H_STEP + 300;
-    let y = t.r * V_STEP + t.q*(HEX_H/2) + 200;
+    const x = t.q * H_STEP + centerX;
+    const y = t.r * V_STEP + t.q * (HEX_H / 2) + centerY;
 
     div.style.left = x + "px";
     div.style.top = y + "px";
 
-    if(!t.active) div.classList.add("dead");
-    else if(t.owner) div.style.background = colors[t.owner];
+    if (!t.active) {
+      div.classList.add("dead");
+    } else if (t.owner) {
+      div.style.background = colors[t.owner];
+    }
 
-    if(t.owner === team && t.active) div.classList.add("player");
+    if (t.active && t.owner === team) {
+      div.classList.add("player");
+    }
 
     div.onclick = () => clickTile(t);
-
     board.appendChild(div);
   });
 
@@ -136,90 +213,104 @@ function draw(){
   updateRanking();
 }
 
-function start(){
-  const id = document.getElementById("id").value;
+function start() {
+  const id = document.getElementById("id").value.trim();
+  if (id.length < 2) return;
 
-  if(id.length < 2) return;
+  const map = {
+    "1": "blue",
+    "2": "red",
+    "3": "green",
+    "4": "yellow"
+  };
 
-  const map = {"1":"blue","2":"red","3":"green","4":"yellow"};
   team = map[id[1]];
-
-  if(!team) return;
+  if (!team) return;
 
   money = 0;
+  started = true;
   buildMap();
   draw();
 }
 
-function clickMoney(){
+function clickMoney() {
+  if (!started) return;
   money++;
   draw();
 }
 
-function neighbors(t){
-  const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,-1],[-1,1]];
-  return dirs.map(([dq,dr]) => tiles[key(t.q+dq,t.r+dr)]).filter(Boolean);
-}
-
-function hasAdj(t){
-  return neighbors(t).some(n => n.active && n.owner === team);
-}
-
-function clickTile(t){
-  if(!t.active) return;
+function clickTile(t) {
+  if (!started) return;
+  if (!t.active) return;
 
   const action = document.getElementById("action").value;
 
-  if(action==="claim" && !t.owner && hasAdj(t) && money>=CLAIM_COST){
-    money-=CLAIM_COST;
-    t.owner=team;
+  if (action === "claim" && !t.owner && hasAdj(t) && money >= CLAIM_COST) {
+    money -= CLAIM_COST;
+    t.owner = team;
   }
 
-  if(action==="capture" && t.owner && t.owner!==team && hasAdj(t) && money>=CAPTURE_COST){
-    money-=CAPTURE_COST;
-    t.owner=team;
+  if (action === "capture" && t.owner && t.owner !== team && hasAdj(t) && money >= CAPTURE_COST) {
+    money -= CAPTURE_COST;
+    t.owner = team;
   }
 
-  if(action==="remote" && t.owner!==team && money>=REMOTE_COST){
-    money-=REMOTE_COST;
-    t.owner=team;
+  if (action === "remote" && t.owner !== team && money >= REMOTE_COST) {
+    money -= REMOTE_COST;
+    t.owner = team;
   }
 
-  if(action==="destroy" && t.owner && t.owner!==team && money>=DESTROY_COST){
-    money-=DESTROY_COST;
-    t.owner=null;
-    t.active=false;
+  if (action === "destroy" && t.owner && t.owner !== team && money >= DESTROY_COST) {
+    money -= DESTROY_COST;
+    t.owner = null;
+    t.active = false;
   }
 
   draw();
   checkEnd();
 }
 
-function updateRanking(){
-  const count = {blue:0,red:0,green:0,yellow:0};
+function updateRanking() {
+  const count = {
+    blue: 0,
+    red: 0,
+    green: 0,
+    yellow: 0
+  };
 
-  Object.values(tiles).forEach(t=>{
-    if(t.active && t.owner) count[t.owner]++;
+  Object.values(tiles).forEach(t => {
+    if (t.active && t.owner) count[t.owner]++;
   });
 
-  const sorted = Object.entries(count).sort((a,b)=>b[1]-a[1]);
+  const sorted = Object.entries(count).sort((a, b) => b[1] - a[1]);
 
-  document.getElementById("ranking").innerHTML =
-    sorted.map(([t,c],i)=>`${i+1}. ${teamNames[t]}${t===team?" (나)":""}: ${c}`)
+  document.getElementById("ranking").innerHTML = sorted
+    .map(([t, c], i) => `${i + 1}. ${teamNames[t]}${t === team ? " (나)" : ""}: ${c}`)
     .join("<br>");
 }
 
-function checkEnd(){
-  const alive = Object.values(tiles).filter(t=>t.active);
+function checkEnd() {
+  const alive = Object.values(tiles).filter(t => t.active);
+  if (!alive.every(t => t.owner)) return;
 
-  if(!alive.every(t=>t.owner)) return;
+  const count = {
+    blue: 0,
+    red: 0,
+    green: 0,
+    yellow: 0
+  };
 
-  const count = {blue:0,red:0,green:0,yellow:0};
-  alive.forEach(t=>count[t.owner]++);
+  alive.forEach(t => {
+    count[t.owner]++;
+  });
 
-  const win = Object.entries(count).sort((a,b)=>b[1]-a[1])[0][0];
-  alert("승리: "+teamNames[win]);
+  const win = Object.entries(count).sort((a, b) => b[1] - a[1])[0][0];
+  alert("승리: " + teamNames[win]);
 }
+
+window.addEventListener("resize", () => {
+  if (started) draw();
+});
 </script>
 
 </body>
